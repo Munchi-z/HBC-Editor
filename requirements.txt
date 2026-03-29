@@ -1,0 +1,39 @@
+# HBCE — Hybrid Controls Editor
+# requirements.txt — V0.0.1
+# Install: pip install -r requirements.txt
+
+# UI Framework
+PyQt6>=6.6.0
+
+# BACnet
+BAC0>=22.9
+
+# Modbus (IMPORTANT: use 3.x only — API changed from 2.x)
+pymodbus>=3.5.0
+
+# Serial / USB
+pyserial>=3.5
+
+# Charting (trend viewer)
+pyqtgraph>=0.13.0
+
+# Reports
+reportlab>=4.0.0
+openpyxl>=3.1.0
+
+# Encryption & Security
+cryptography>=41.0.0
+
+# HTTP (license portal calls)
+requests>=2.31.0
+
+# Cloud Sync — Google Drive
+google-api-python-client>=2.100.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=1.0.0
+
+# Cloud Sync — Microsoft OneDrive
+msal>=1.24.0
+
+# Packaging (dev only — not needed at runtime)
+pyinstaller>=6.0.0

@@ -1,0 +1,77 @@
+# HBCE — Hybrid Controls Editor
+# .gitignore
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.spec.bak
+pip-log.txt
+pip-delete-this-directory.txt
+.installed.cfg
+lib/
+lib64/
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+venv/
+env/
+.venv/
+.env/
+ENV/
+
+# ── PyInstaller build output ──────────────────────────────────────────────────
+dist/
+build/
+*.manifest
+
+# ── HBCE app data (never commit user data) ───────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+*.hbce
+*.hbcebak
+*.hbceprog
+*.log
+logs/
+
+# ── Secrets / environment ─────────────────────────────────────────────────────
+.env
+.env.local
+*.pem
+*.key
+secrets.json
+portal/portal.db
+portal/.env
+
+# ── User config and cache ─────────────────────────────────────────────────────
+config.json
+user_custom.qss
+*.cache
+
+# ── IDE / Editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Test output ───────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+*.junit.xml
+
+# ── GitHub Actions local run cache ───────────────────────────────────────────
+.act/
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+desktop.ini
+ehthumbs.db

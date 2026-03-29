@@ -1,0 +1,111 @@
+# HBCE — Git Setup & First Push Guide
+# Follow these steps exactly, one at a time.
+# Run all commands in Command Prompt or PowerShell from inside the HBCE folder.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 1 — Install Git (if you haven't already)
+# ─────────────────────────────────────────────────────────────────────────────
+# Download from: https://git-scm.com/download/win
+# Install with all default options.
+# Then close and reopen your terminal.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 2 — Open a terminal in the HBCE folder
+# ─────────────────────────────────────────────────────────────────────────────
+# Option A: In File Explorer, navigate to the HBCE folder,
+#           then type "cmd" in the address bar and press Enter.
+# Option B: Open Command Prompt and type:
+#   cd C:\path\to\your\HBCE
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 3 — Configure Git with your name and email (first time only)
+# ─────────────────────────────────────────────────────────────────────────────
+git config --global user.name "Munchi-z"
+git config --global user.email "your-email@example.com"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 4 — Initialize Git in the HBCE folder
+# ─────────────────────────────────────────────────────────────────────────────
+git init
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 5 — Connect to your GitHub repo
+# ─────────────────────────────────────────────────────────────────────────────
+git remote add origin https://github.com/Munchi-z/HBC-Editor.git
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 6 — Stage all files
+# ─────────────────────────────────────────────────────────────────────────────
+git add .
+
+# Verify what's being added (optional — you'll see a list of all files):
+git status
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 7 — Make your first commit
+# ─────────────────────────────────────────────────────────────────────────────
+git commit -m "Initial commit: HBCE V0.0.1 skeleton — all core files, CI/CD pipeline"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 8 — Push to GitHub
+# ─────────────────────────────────────────────────────────────────────────────
+git branch -M main
+git push -u origin main
+
+# GitHub will ask for your username and password.
+# NOTE: GitHub no longer accepts passwords — use a Personal Access Token instead.
+#
+# To create a token:
+#   1. Go to: https://github.com/settings/tokens
+#   2. Click "Generate new token (classic)"
+#   3. Name it "HBCE push token"
+#   4. Check: repo (full control)
+#   5. Click Generate — COPY the token immediately (only shown once)
+#   6. Use it as your password when Git asks
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 9 — Verify on GitHub
+# ─────────────────────────────────────────────────────────────────────────────
+# Visit: https://github.com/Munchi-z/HBC-Editor
+# You should see all your files there.
+# The Actions tab will show the build workflow is registered.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 10 — Trigger your FIRST BUILD
+# ─────────────────────────────────────────────────────────────────────────────
+# Tag the current commit as V0.0.1 and push the tag:
+
+git tag v0.0.1
+git push origin v0.0.1
+
+# Now watch it build at:
+# https://github.com/Munchi-z/HBC-Editor/actions
+#
+# In about 5–10 minutes, a ZIP file will appear at:
+# https://github.com/Munchi-z/HBC-Editor/releases
+#
+# Download HBCE-v0.0.1-windows.zip, extract it, double-click HBCE.exe
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FUTURE WORKFLOW (every time you make changes)
+# ─────────────────────────────────────────────────────────────────────────────
+# After editing files:
+git add .
+git commit -m "Description of what you changed"
+git push
+
+# To release a new version:
+# 1. Update version.py — bump VERSION_PATCH (or MINOR/MAJOR)
+git add version.py
+git commit -m "Bump version to V0.0.2"
+git tag v0.0.2
+git push && git push origin v0.0.2
+# GitHub Actions builds and releases automatically.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TROUBLESHOOTING
+# ─────────────────────────────────────────────────────────────────────────────
+# "src refspec main does not match any" → run: git branch -M main first
+# "remote origin already exists" → run: git remote set-url origin https://github.com/Munchi-z/HBC-Editor.git
+# Build fails in Actions → check the red X at github.com/Munchi-z/HBC-Editor/actions
+#   Click the failed job to see the exact error line

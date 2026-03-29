@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  HBCE — Hybrid Controls Editor
+  Splash screen SVG — shown for ~2 seconds on app launch
+  Used in: core/app.py splash screen, About dialog
+  Size: 480×300
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 480 300"
+     width="480" height="300">
+
+  <!-- Background -->
+  <rect width="480" height="300" fill="#12121e"/>
+
+  <!-- Subtle hex grid pattern (background texture) -->
+  <g stroke="#1e1e32" stroke-width="0.8" fill="none" opacity="0.6">
+    <polygon points="60,20 80,9 100,20 100,42 80,53 60,42"/>
+    <polygon points="100,20 120,9 140,20 140,42 120,53 100,42"/>
+    <polygon points="340,258 360,247 380,258 380,280 360,291 340,280"/>
+    <polygon points="380,258 400,247 420,258 420,280 400,291 380,280"/>
+    <polygon points="420,20 440,9 460,20 460,42 440,53 420,42"/>
+  </g>
+
+  <!-- ── Logo mark (centered left area) ──────────────────────────────── -->
+  <g transform="translate(100, 60) scale(0.9)">
+    <defs>
+      <clipPath id="sp-hex-clip">
+        <polygon points="100,18 172,57.5 172,142.5 100,182 28,142.5 28,57.5"/>
+      </clipPath>
+    </defs>
+
+    <!-- Hex shell -->
+    <polygon points="100,18 172,57.5 172,142.5 100,182 28,142.5 28,57.5"
+      fill="#10101e" stroke="#3A3A5C" stroke-width="2.5"/>
+
+    <!-- Fan blades -->
+    <g clip-path="url(#sp-hex-clip)">
+      <path d="M100,100 L136,46 A56,56,0,0,1,168,80 Z" fill="#C04828"/>
+      <path d="M100,100 L136,46 A56,56,0,0,1,168,80 Z" fill="#F2A623" opacity="0.30"/>
+      <path d="M100,100 L154,136 A56,56,0,0,1,120,168 Z" fill="#0C447C"/>
+      <path d="M100,100 L154,136 A56,56,0,0,1,120,168 Z" fill="#3B8BD4" opacity="0.30"/>
+      <path d="M100,100 L64,154 A56,56,0,0,1,32,120 Z" fill="#C04828"/>
+      <path d="M100,100 L64,154 A56,56,0,0,1,32,120 Z" fill="#F2A623" opacity="0.30"/>
+      <path d="M100,100 L46,64 A56,56,0,0,1,80,32 Z" fill="#0C447C"/>
+      <path d="M100,100 L46,64 A56,56,0,0,1,80,32 Z" fill="#3B8BD4" opacity="0.30"/>
+    </g>
+
+    <!-- Air fins -->
+    <g stroke="white" stroke-width="1.2" stroke-linecap="round" opacity="0.35">
+      <line x1="72"  y1="34"  x2="128" y2="34"/>
+      <line x1="62"  y1="46"  x2="138" y2="46"/>
+      <line x1="62"  y1="154" x2="138" y2="154"/>
+      <line x1="72"  y1="166" x2="128" y2="166"/>
+    </g>
+
+    <!-- Hub -->
+    <circle cx="100" cy="100" r="24" fill="#10101e" stroke="#444" stroke-width="2"/>
+    <circle cx="100" cy="100" r="15" fill="#1a1a2e"/>
+    <path d="M100,85 A15,15,0,0,1,100,115 Z" fill="#E85D24"/>
+    <path d="M100,85 A15,15,0,0,0,100,115 Z" fill="#185FA5"/>
+
+    <!-- Corner nodes -->
+    <circle cx="100"  cy="18"    r="4.5" fill="#F2A623"/>
+    <circle cx="172"  cy="57.5"  r="4.5" fill="#E85D24"/>
+    <circle cx="172"  cy="142.5" r="4.5" fill="#3B8BD4"/>
+    <circle cx="100"  cy="182"   r="4.5" fill="#185FA5"/>
+    <circle cx="28"   cy="142.5" r="4.5" fill="#3B8BD4"/>
+    <circle cx="28"   cy="57.5"  r="4.5" fill="#E85D24"/>
+
+    <!-- Hex border -->
+    <polygon points="100,18 172,57.5 172,142.5 100,182 28,142.5 28,57.5"
+      fill="none" stroke="white" stroke-width="1.5" opacity="0.18"/>
+  </g>
+
+  <!-- ── Wordmark (right side) ─────────────────────────────────────────── -->
+  <!-- HBCE acronym -->
+  <text x="290" y="118"
+    font-family="Segoe UI, Arial, sans-serif"
+    font-size="64"
+    font-weight="700"
+    fill="white"
+    letter-spacing="-1">HBCE</text>
+
+  <!-- Accent line under HBCE -->
+  <rect x="290" y="130" width="160" height="2.5" rx="1.25" fill="#00AAFF"/>
+
+  <!-- Full name -->
+  <text x="290" y="158"
+    font-family="Segoe UI, Arial, sans-serif"
+    font-size="15"
+    font-weight="400"
+    fill="#808090"
+    letter-spacing="0.5">Hybrid Controls Editor</text>
+
+  <!-- Version -->
+  <text x="290" y="182"
+    font-family="Segoe UI, Arial, sans-serif"
+    font-size="12"
+    fill="#505060">Version V0.0.1</text>
+
+  <!-- Hot / Cold tagline -->
+  <text x="290" y="210"
+    font-family="Segoe UI, Arial, sans-serif"
+    font-size="11"
+    fill="#404050">BACnet · Modbus · Trane · Metasys · Distech</text>
+
+  <!-- Bottom loading bar track -->
+  <rect x="40" y="272" width="400" height="4" rx="2" fill="#1e1e32"/>
+  <!-- Loading bar fill (animated in app — static here) -->
+  <rect x="40" y="272" width="160" height="4" rx="2" fill="#00AAFF" opacity="0.8"/>
+
+  <!-- Bottom caption -->
+  <text x="240" y="292"
+    font-family="Segoe UI, Arial, sans-serif"
+    font-size="10"
+    fill="#404050"
+    text-anchor="middle">Loading...</text>
+
+</svg>

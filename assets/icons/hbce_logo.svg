@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  HBCE — Hybrid Controls Editor
+  Logo: Hex Vortex
+  Master SVG — use this as the source for all other formats.
+
+  Sizes exported from this file:
+    hbce_icon_256.png  — app icon (256×256)
+    hbce_icon_64.png   — toolbar / sidebar (64×64)
+    hbce_icon_32.png   — taskbar (32×32)
+    hbce_icon_16.png   — tab / small (16×16)
+    hbce_icon.ico      — Windows .exe icon (multi-size, built by build script)
+    hbce_splash.svg    — splash screen logo with wordmark
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 200 200"
+     width="200" height="200"
+     id="hbce-hex-vortex">
+
+  <defs>
+    <!-- Clip all content to hex shape -->
+    <clipPath id="hex-clip">
+      <polygon points="100,18 172,57.5 172,142.5 100,182 28,142.5 28,57.5"/>
+    </clipPath>
+  </defs>
+
+  <!-- ── Hex shell background ───────────────────────────────────────────── -->
+  <polygon
+    points="100,18 172,57.5 172,142.5 100,182 28,142.5 28,57.5"
+    fill="#10101e"
+    stroke="#3A3A5C"
+    stroke-width="2.5"/>
+
+  <!-- ── Fan blades (clipped to hex) ───────────────────────────────────── -->
+  <g clip-path="url(#hex-clip)">
+    <!-- Blade 1: top-right — hot orange -->
+    <path d="M100,100 L136,46 A56,56,0,0,1,168,80 Z" fill="#C04828"/>
+    <path d="M100,100 L136,46 A56,56,0,0,1,168,80 Z" fill="#F2A623" opacity="0.30"/>
+
+    <!-- Blade 2: bottom-right — cool blue -->
+    <path d="M100,100 L154,136 A56,56,0,0,1,120,168 Z" fill="#0C447C"/>
+    <path d="M100,100 L154,136 A56,56,0,0,1,120,168 Z" fill="#3B8BD4" opacity="0.30"/>
+
+    <!-- Blade 3: bottom-left — hot orange -->
+    <path d="M100,100 L64,154 A56,56,0,0,1,32,120 Z" fill="#C04828"/>
+    <path d="M100,100 L64,154 A56,56,0,0,1,32,120 Z" fill="#F2A623" opacity="0.30"/>
+
+    <!-- Blade 4: top-left — cool blue -->
+    <path d="M100,100 L46,64 A56,56,0,0,1,80,32 Z" fill="#0C447C"/>
+    <path d="M100,100 L46,64 A56,56,0,0,1,80,32 Z" fill="#3B8BD4" opacity="0.30"/>
+  </g>
+
+  <!-- ── Air fin accent lines ───────────────────────────────────────────── -->
+  <!-- Top fins -->
+  <g stroke="white" stroke-width="1.2" stroke-linecap="round" opacity="0.35">
+    <line x1="72"  y1="34" x2="128" y2="34"/>
+    <line x1="62"  y1="46" x2="138" y2="46"/>
+  </g>
+  <!-- Bottom fins -->
+  <g stroke="white" stroke-width="1.2" stroke-linecap="round" opacity="0.35">
+    <line x1="62"  y1="154" x2="138" y2="154"/>
+    <line x1="72"  y1="166" x2="128" y2="166"/>
+  </g>
+
+  <!-- ── Center hub ─────────────────────────────────────────────────────── -->
+  <circle cx="100" cy="100" r="24" fill="#10101e" stroke="#444444" stroke-width="2"/>
+  <circle cx="100" cy="100" r="15" fill="#1a1a2e"/>
+
+  <!-- Hub split: hot left / cold right -->
+  <path d="M100,85 A15,15,0,0,1,100,115 Z" fill="#E85D24"/>
+  <path d="M100,85 A15,15,0,0,0,100,115 Z" fill="#185FA5"/>
+
+  <!-- ── Corner accent nodes ────────────────────────────────────────────── -->
+  <circle cx="100"  cy="18"    r="4.5" fill="#F2A623"/>   <!-- top -->
+  <circle cx="172"  cy="57.5"  r="4.5" fill="#E85D24"/>   <!-- top-right -->
+  <circle cx="172"  cy="142.5" r="4.5" fill="#3B8BD4"/>   <!-- bottom-right -->
+  <circle cx="100"  cy="182"   r="4.5" fill="#185FA5"/>   <!-- bottom -->
+  <circle cx="28"   cy="142.5" r="4.5" fill="#3B8BD4"/>   <!-- bottom-left -->
+  <circle cx="28"   cy="57.5"  r="4.5" fill="#E85D24"/>   <!-- top-left -->
+
+  <!-- ── Hex border overlay ─────────────────────────────────────────────── -->
+  <polygon
+    points="100,18 172,57.5 172,142.5 100,182 28,142.5 28,57.5"
+    fill="none"
+    stroke="white"
+    stroke-width="1.5"
+    opacity="0.18"/>
+
+</svg>
