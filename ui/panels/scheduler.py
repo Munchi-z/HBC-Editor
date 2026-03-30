@@ -4,7 +4,7 @@ ui/panels/scheduler.py — 📅 Scheduler
 
 Edit weekly and exception schedules on controllers.
 
-STATUS: V0.0.1 STUB — Full implementation in subsequent build steps.
+STATUS: V0.0.4-alpha STUB — Full implementation in subsequent build steps.
 """
 
 from PyQt6.QtWidgets import (
@@ -72,7 +72,7 @@ class SchedulerPanel(QWidget):
         notice_icon.setFont(notice_font)
         notice_layout.addWidget(notice_icon)
 
-        notice_text = QLabel("Full implementation coming in V0.0.1 build steps.")
+        notice_text = QLabel("Coming in V0.0.4-alpha — full build in progress.")
         notice_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         notice_text.setStyleSheet("color: #808090; font-size: 11pt;")
         notice_layout.addWidget(notice_text)

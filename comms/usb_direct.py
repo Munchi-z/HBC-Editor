@@ -6,7 +6,7 @@ Handles direct USB connections to controllers (e.g. Trane UC800 via USB cable).
 USB-direct typically presents as a virtual COM port or CDC device.
 In many cases this is a Modbus RTU or proprietary protocol over USB-serial.
 
-V0.0.1: Detects USB serial devices, presents them for selection,
+V0.0.4-alpha: Detects USB serial devices, presents them for selection,
         then delegates to ModbusRTUAdapter or a vendor-specific handler.
 """
 

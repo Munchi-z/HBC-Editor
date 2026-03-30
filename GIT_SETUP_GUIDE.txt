@@ -44,7 +44,7 @@ git status
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 7 — Make your first commit
 # ─────────────────────────────────────────────────────────────────────────────
-git commit -m "Initial commit: HBCE V0.0.1 skeleton — all core files, CI/CD pipeline"
+git commit -m "Initial commit: HBCE V0.0.4-alpha — full build — all core files, CI/CD pipeline"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 8 — Push to GitHub
@@ -97,7 +97,7 @@ git push
 # To release a new version:
 # 1. Update version.py — bump VERSION_PATCH (or MINOR/MAJOR)
 git add version.py
-git commit -m "Bump version to V0.0.2"
+git commit -m "Bump version to next alpha"
 git tag v0.0.2
 git push && git push origin v0.0.2
 # GitHub Actions builds and releases automatically.

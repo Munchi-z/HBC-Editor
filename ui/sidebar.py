@@ -1,8 +1,8 @@
 """
 HBCE — Hybrid Controls Editor
-ui/sidebar.py — Left navigation sidebar (redesigned V0.0.2-alpha)
+ui/sidebar.py — Left navigation sidebar (redesigned V0.0.4-alpha)
 
-Changes from V0.0.1:
+Changes from V0.0.3-alpha:
   - HBCE logo + header is now the Dashboard home button
   - Tools modules (reports, scheduler, etc.) moved to top menu bar
   - Sidebar now shows device-focused nav only

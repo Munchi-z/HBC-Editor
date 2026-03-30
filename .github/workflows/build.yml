@@ -1,21 +1,17 @@
 # HBCE — Hybrid Controls Editor
-# .github/workflows/build.yml  (v3 — FIXED)
+# .github/workflows/build.yml  (v4 — V0.0.5-alpha)
 #
-# FIXES IN THIS VERSION:
-#   FIX-006: Added permissions: contents: write to job
-#            Without this GitHub Actions cannot create Releases on new repos.
-#            Error was: "Resource not accessible by integration"
-#
-# PREVIOUS FIXES:
+# ALL FIXES APPLIED (FIX-001 through FIX-006):
 #   FIX-001: shell: python replaced with script file approach
-#   FIX-002: BAC0/google pip installs made non-fatal
-#   FIX-003: Removed missing version_info.txt from spec
+#   FIX-002: BAC0/google pip installs made non-fatal (warn + continue)
+#   FIX-003: Removed missing version_info.txt from PyInstaller spec
 #   FIX-004: Bash heredocs replaced with PowerShell here-strings
-#   FIX-005: Node.js warning — informational only, no action needed
+#   FIX-005: Node.js deprecation warning — informational only
+#   FIX-006: Added permissions: contents: write (required for Releases)
 #
 # HOW TO TRIGGER:
 #   Manual:  GitHub → Actions → "Build HBCE Windows Executable" → Run workflow
-#   Release: git tag v0.0.2-alpha && git push origin v0.0.2-alpha
+#   Release: git tag v0.0.5-alpha && git push origin v0.0.5-alpha
 
 name: Build HBCE Windows Executable
 
@@ -67,6 +63,7 @@ jobs:
           pip install reportlab
           pip install openpyxl
           pip install pyserial
+          pip install psutil
           pip install pyinstaller
 
       # ── 5. Optional comms packages (allowed to fail) ──────────────────────

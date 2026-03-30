@@ -1,8 +1,8 @@
 """
 HBCE — Hybrid Controls Editor
-ui/main_window.py — Main application window (redesigned V0.0.2-alpha)
+ui/main_window.py — Main application window (redesigned V0.0.4-alpha)
 
-Changes from V0.0.1:
+Changes from V0.0.3-alpha:
   - Dashboard accessed via sidebar logo/header (index 0)
   - Sidebar only shows device panels (Connect, Point Browser, Custom Controller)
   - Tools menu bar now contains: Alarms, Trends, Program Editor,

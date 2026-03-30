@@ -1,6 +1,6 @@
 """
 HBCE — Hybrid Controls Editor
-ui/panels/dashboard.py — Dashboard panel (full implementation V0.0.2-alpha)
+ui/panels/dashboard.py — Dashboard panel (full implementation V0.0.4-alpha)
 
 Features:
   - Connected devices quick-connect cards

@@ -239,7 +239,7 @@ class BACnetIPAdapter(BaseCommAdapter):
 
     def read_alarm_summary(self, device_id: int) -> list[AlarmRecord]:
         # BAC0 alarm summary requires specific service calls
-        # Stubbed for V0.0.1 — full implementation in next build step
+        # Stubbed — full impl coming V0.0.4-alpha — full implementation in next build step
         logger.debug(f"BACnet/IP read_alarm_summary: device {device_id} (stub)")
         return []
 
@@ -251,7 +251,7 @@ class BACnetIPAdapter(BaseCommAdapter):
         timestamp:   str,
         ack_text:    str = "Acknowledged via HBCE",
     ) -> bool:
-        # BACnet AcknowledgeAlarm service — stubbed for V0.0.1
+        # AcknowledgeAlarm — stubbed V0.0.4-alpha
         logger.debug(f"BACnet/IP ack alarm: {object_type}:{instance}")
         return False
 
@@ -263,7 +263,7 @@ class BACnetIPAdapter(BaseCommAdapter):
         object_instance: int,
         count:           int = 100,
     ) -> list[TrendRecord]:
-        # BACnet ReadRange on TrendLog objects — stubbed for V0.0.1
+        # TrendLog ReadRange — stubbed V0.0.4-alpha
         logger.debug(f"BACnet/IP get_trend_log: instance {object_instance} (stub)")
         return []
 

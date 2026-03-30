@@ -230,10 +230,10 @@ class BACnetMSTPAdapter(BaseCommAdapter):
             return False
 
     def read_alarm_summary(self, device_id: int) -> list[AlarmRecord]:
-        return []  # Stub — V0.0.1
+        return []  # Stub — V0.0.4-alpha
 
     def get_trend_log(self, device_id, object_instance, count=100) -> list[TrendRecord]:
-        return []  # Stub — V0.0.1
+        return []  # Stub — V0.0.4-alpha
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

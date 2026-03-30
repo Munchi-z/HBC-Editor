@@ -1,12 +1,12 @@
 """
 HBCE — Hybrid Controls Editor
-ui/theme_engine.py — Theme engine (updated V0.0.2-alpha)
+ui/theme_engine.py — Theme engine (updated V0.0.4-alpha)
 
 Changes:
   - Panel headers more prominent (gradient bar, larger title, accent underline)
   - DashCard styling refined
   - Sidebar header button styles added
-  - All other V0.0.1 features retained
+  - All previous features retained
 """
 
 import os
@@ -74,7 +74,7 @@ def build_qss(c: dict) -> str:
     fs_s = max(fs - 1, 8)
 
     return f"""
-/* ── HBCE Global Stylesheet V0.0.2-alpha ── */
+/* ── HBCE Global Stylesheet V0.0.4-alpha ── */
 
 QMainWindow, QDialog, QWidget {{
     background-color: {c['bg_primary']};
