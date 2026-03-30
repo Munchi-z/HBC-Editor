@@ -19,7 +19,7 @@ APP_URL       = "https://github.com/Munchi-z/HBC-Editor"
 BUILD_DATE    = "2026-03-30"
 
 # ── Version history ─────────────────────────────────────────────────────────
-# V0.0.9-alpha  2026-03-30  Alarm Viewer visual redesign — stripe+pill style
+# V0.0.9-alpha  2026-03-30  Alarm Viewer visual redesign + crash handler
 # V0.0.8-alpha  2026-03-30  Alarm Viewer — full implementation
 # V0.0.7-alpha  2026-03-29  Point Browser — full implementation
 # V0.0.6-alpha  2026-03-29  Connection Wizard — full implementation

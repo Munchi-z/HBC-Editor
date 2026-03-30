@@ -18,6 +18,7 @@ from PyQt6.QtGui import QIcon
 
 from version import VERSION, APP_NAME, APP_FULL_NAME
 from core.app import HBCEApp
+from core.crash_handler import install_crash_handler
 
 
 def main():
@@ -31,6 +32,9 @@ def main():
     app.setApplicationDisplayName(APP_FULL_NAME)
     app.setApplicationVersion(VERSION)
     app.setOrganizationName("HBCE Project")
+
+    # Install global crash handler — must be after QApplication is created
+    install_crash_handler()
 
     # Set app icon (will be replaced with real icon asset)
     icon_path = os.path.join(os.path.dirname(__file__), "assets", "icons", "hbce_icon.png")
