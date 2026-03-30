@@ -1,12 +1,10 @@
 # HBCE — Hybrid Controls Editor
-# version.py — Single source of truth for version string
-# Update this file ONLY when releasing a new version.
-# All other files import from here — never hardcode the version elsewhere.
+# version.py
 
 VERSION_MAJOR = 0
 VERSION_MINOR = 0
-VERSION_PATCH = 2
-VERSION_LABEL = "alpha"      # alpha / beta / rc / "" (empty = stable release)
+VERSION_PATCH = 3
+VERSION_LABEL = "alpha"
 
 VERSION = f"V{VERSION_MAJOR}.{VERSION_MINOR}.{VERSION_PATCH}-{VERSION_LABEL}" \
           if VERSION_LABEL else \
@@ -18,10 +16,9 @@ APP_NAME      = "HBCE"
 APP_FULL_NAME = "Hybrid Controls Editor"
 APP_AUTHOR    = "HBCE Project"
 APP_URL       = "https://github.com/Munchi-z/HBC-Editor"
-
-# Build date — update manually or via CI on each release
-BUILD_DATE = "2026-03-29"
+BUILD_DATE    = "2026-03-29"
 
 # ── Version history ────────────────────────────────────────────────────────
-# V0.0.2-alpha  2026-03-29  CI pipeline fixed (FIX-006: permissions block)
-# V0.0.1        2026-03-29  Initial skeleton — all core files, CI/CD setup
+# V0.0.3-alpha  2026-03-29  UI redesign: sidebar logo, tools menu, full dashboard
+# V0.0.2-alpha  2026-03-29  CI fix: permissions block (FIX-006)
+# V0.0.1        2026-03-29  Initial skeleton
