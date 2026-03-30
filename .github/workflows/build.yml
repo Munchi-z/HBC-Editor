@@ -1,27 +1,32 @@
 # HBCE — Hybrid Controls Editor
-# .github/workflows/build.yml  (FIXED — v2)
+# .github/workflows/build.yml  (v3 — FIXED)
 #
-# FIXES APPLIED:
-#   FIX-001: Replaced invalid "shell: python" with "run: python setup_assets.py"
-#   FIX-002: Split requirements install — BAC0/google libs won't crash the build
-#   FIX-003: Removed version_info.txt reference from spec (file didn't exist)
-#   FIX-004: Replaced bash heredocs with PowerShell Write-Content (Windows-safe)
-#   FIX-005: Updated action versions to Node.js 24 compatible releases
+# FIXES IN THIS VERSION:
+#   FIX-006: Added permissions: contents: write to job
+#            Without this GitHub Actions cannot create Releases on new repos.
+#            Error was: "Resource not accessible by integration"
 #
-# HOW TO TRIGGER A BUILD:
-#   Manual:  GitHub → Actions tab → "Build HBCE" → Run workflow
-#   Release: git tag v0.0.1 && git push origin v0.0.1
+# PREVIOUS FIXES:
+#   FIX-001: shell: python replaced with script file approach
+#   FIX-002: BAC0/google pip installs made non-fatal
+#   FIX-003: Removed missing version_info.txt from spec
+#   FIX-004: Bash heredocs replaced with PowerShell here-strings
+#   FIX-005: Node.js warning — informational only, no action needed
+#
+# HOW TO TRIGGER:
+#   Manual:  GitHub → Actions → "Build HBCE Windows Executable" → Run workflow
+#   Release: git tag v0.0.2-alpha && git push origin v0.0.2-alpha
 
 name: Build HBCE Windows Executable
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'
   workflow_dispatch:
     inputs:
       version_override:
-        description: 'Version label (e.g. v0.0.1-beta). Leave blank for auto.'
+        description: 'Version label (e.g. v0.0.2-alpha). Leave blank for auto.'
         required: false
         default: ''
 
@@ -30,13 +35,18 @@ jobs:
     name: Build on Windows
     runs-on: windows-latest
 
+    # ── FIX-006: Explicit permissions — required to create Releases ────────
+    permissions:
+      contents: write    # Needed for: creating releases, uploading assets
+      actions: read      # Needed for: reading workflow run info
+
     steps:
 
       # ── 1. Checkout ───────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Python setup ───────────────────────────────────────────────────
+      # ── 2. Python 3.11 ────────────────────────────────────────────────────
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -47,7 +57,7 @@ jobs:
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
-      # ── 4. Install core UI packages (required — must succeed) ─────────────
+      # ── 4. Core packages (must succeed) ───────────────────────────────────
       - name: Install core packages
         run: |
           pip install PyQt6
@@ -59,87 +69,76 @@ jobs:
           pip install pyserial
           pip install pyinstaller
 
-      # ── 5. Install comms packages (optional — allowed to fail) ────────────
-      #    BAC0 and google libs have complex deps that sometimes fail on CI.
-      #    The app will still build without them — stubs handle missing imports.
-      - name: Install optional comms packages
+      # ── 5. Optional comms packages (allowed to fail) ──────────────────────
+      - name: Install optional packages
         shell: pwsh
         run: |
-          $packages = @("BAC0", "pymodbus", "google-api-python-client",
-                        "google-auth-httplib2", "google-auth-oauthlib", "msal")
-          foreach ($pkg in $packages) {
-            Write-Host "Installing $pkg ..."
-            pip install $pkg
+          $pkgs = @("BAC0","pymodbus","google-api-python-client",
+                    "google-auth-httplib2","google-auth-oauthlib","msal")
+          foreach ($p in $pkgs) {
+            Write-Host "Trying: $p"
+            pip install $p 2>&1 | Out-Null
             if ($LASTEXITCODE -ne 0) {
-              Write-Host "WARNING: $pkg failed to install — skipping (non-fatal)"
+              Write-Host "  SKIP: $p failed (non-fatal)"
+            } else {
+              Write-Host "  OK: $p"
             }
           }
           exit 0
 
-      # ── 6. Determine version string ───────────────────────────────────────
+      # ── 6. Determine version ──────────────────────────────────────────────
       - name: Get version
         id: version
         shell: pwsh
         run: |
-          $ref = "${{ github.ref }}"
-          $input_ver = "${{ github.event.inputs.version_override }}"
+          $ref   = "${{ github.ref }}"
+          $input = "${{ github.event.inputs.version_override }}"
           if ($ref -match "refs/tags/(.+)") {
-            $version = $matches[1]
-          } elseif ($input_ver -ne "") {
-            $version = $input_ver
+            $ver = $matches[1]
+          } elseif ($input -ne "") {
+            $ver = $input
           } else {
             $short = git rev-parse --short HEAD
-            $version = "dev-$short"
+            $ver = "dev-$short"
           }
-          Write-Host "Building version: $version"
-          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Version: $ver"
+          "VERSION=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── 7. Create required asset files ───────────────────────────────────
-      #    FIX-001: was "shell: python" which is invalid — now a .py script
-      - name: Create asset placeholder script
+      # ── 7. Create asset placeholders (FIX-001) ────────────────────────────
+      - name: Write asset setup script
         shell: pwsh
         run: |
-          $script = @'
+          @'
           import os, struct
-
           os.makedirs("assets/icons", exist_ok=True)
           os.makedirs("assets/themes", exist_ok=True)
-
-          ico_path = "assets/icons/hbce_icon.ico"
-          if not os.path.exists(ico_path):
-              ico  = b"\x00\x00\x01\x00\x01\x00"
-              ico += bytes([16, 16, 0, 0, 1, 0, 32, 0])
-              ico += struct.pack("<I", 40 + 16*16*4)
-              ico += struct.pack("<I", 22)
-              ico += struct.pack("<IIIHHIIIIII", 40, 16, 32, 1, 32, 0, 16*16*4, 0, 0, 0, 0)
-              ico += b"\x00\x00\x00\x00" * (16 * 16)
-              with open(ico_path, "wb") as f:
-                  f.write(ico)
+          ico = "assets/icons/hbce_icon.ico"
+          if not os.path.exists(ico):
+              data  = b"\x00\x00\x01\x00\x01\x00"
+              data += bytes([16,16,0,0,1,0,32,0])
+              data += struct.pack("<I", 40+16*16*4)
+              data += struct.pack("<I", 22)
+              data += struct.pack("<IIIHHIIIIII",40,16,32,1,32,0,16*16*4,0,0,0,0)
+              data += b"\x00\x00\x00\x00"*(16*16)
+              open(ico,"wb").write(data)
               print("Created placeholder icon")
-
-          for theme in ["dark_default.qss", "light_default.qss"]:
-              p = f"assets/themes/{theme}"
+          for t in ["dark_default.qss","light_default.qss"]:
+              p = f"assets/themes/{t}"
               if not os.path.exists(p):
-                  with open(p, "w") as f:
-                      f.write("/* HBCE theme placeholder */\n")
+                  open(p,"w").write("/* HBCE placeholder */\n")
                   print(f"Created {p}")
-
-          print("Assets ready.")
-          '@
-          $script | Out-File -FilePath "setup_assets.py" -Encoding utf8
+          print("Assets OK")
+          '@ | Out-File -FilePath setup_assets.py -Encoding utf8
 
       - name: Run asset setup
         run: python setup_assets.py
 
-      # ── 8. Write a clean PyInstaller spec (fixes missing version_info.txt) ─
-      #    FIX-003: original spec had version='version_info.txt' — file missing
+      # ── 8. Write CI PyInstaller spec (FIX-003) ────────────────────────────
       - name: Write PyInstaller spec
         shell: pwsh
         run: |
-          $spec = @'
-          # HBCE build spec — auto-generated by GitHub Actions
+          @'
           block_cipher = None
-
           a = Analysis(
               ["main.py"],
               pathex=["."],
@@ -163,117 +162,79 @@ jobs:
               ],
               hookspath=[],
               runtime_hooks=[],
-              excludes=["tkinter", "matplotlib", "scipy", "cv2",
-                        "IPython", "notebook", "jupyter"],
+              excludes=["tkinter","matplotlib","scipy","cv2","IPython"],
               win_no_prefer_redirects=False,
               win_private_assemblies=False,
               cipher=block_cipher,
               noarchive=False,
           )
-
           pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-
           exe = EXE(
-              pyz,
-              a.scripts,
-              [],
+              pyz, a.scripts, [],
               exclude_binaries=True,
               name="HBCE",
               debug=False,
-              bootloader_ignore_signals=False,
               strip=False,
               upx=True,
               console=False,
               icon="assets/icons/hbce_icon.ico",
           )
-
           coll = COLLECT(
-              exe,
-              a.binaries,
-              a.zipfiles,
-              a.datas,
-              strip=False,
-              upx=True,
-              upx_exclude=[],
-              name="HBCE",
+              exe, a.binaries, a.zipfiles, a.datas,
+              strip=False, upx=True, upx_exclude=[], name="HBCE",
           )
-          '@
-          $spec | Out-File -FilePath "hbce_ci.spec" -Encoding utf8
+          '@ | Out-File -FilePath hbce_ci.spec -Encoding utf8
           Write-Host "CI spec written."
 
-      # ── 9. Build the .exe ─────────────────────────────────────────────────
+      # ── 9. Build .exe ─────────────────────────────────────────────────────
       - name: Build with PyInstaller
+        shell: pwsh
         run: pyinstaller hbce_ci.spec --clean --noconfirm
         env:
           HBCE_LICENSE_ENABLED: "0"
 
-      # ── 10. Verify build succeeded ────────────────────────────────────────
-      - name: Verify build output
+      # ── 10. Verify .exe exists ────────────────────────────────────────────
+      - name: Verify build
         shell: pwsh
         run: |
           if (Test-Path "dist\HBCE\HBCE.exe") {
-            $size = (Get-Item "dist\HBCE\HBCE.exe").Length / 1MB
-            Write-Host ("Build OK — HBCE.exe ({0:N1} MB)" -f $size)
+            $mb = (Get-Item "dist\HBCE\HBCE.exe").Length/1MB
+            Write-Host ("Build OK — HBCE.exe ({0:N1} MB)" -f $mb)
           } else {
-            Write-Host "ERROR: HBCE.exe not found in dist\HBCE\"
+            Write-Host "ERROR: HBCE.exe missing"
             Get-ChildItem dist\ -ErrorAction SilentlyContinue
             exit 1
           }
 
-      # ── 11. Write info files into dist folder ─────────────────────────────
-      #    FIX-004: was bash heredoc — unreliable on Windows, now PowerShell
-      - name: Write build info files
+      # ── 11. Write info files (FIX-004) ────────────────────────────────────
+      - name: Write build info
         shell: pwsh
         run: |
-          $ver = "${{ steps.version.outputs.VERSION }}"
-          $date = (Get-Date -Format "yyyy-MM-dd HH:mm UTC")
-          $sha = "${{ github.sha }}"
+          $ver  = "${{ steps.version.outputs.VERSION }}"
+          $date = Get-Date -Format "yyyy-MM-dd HH:mm UTC"
+          $sha  = "${{ github.sha }}"
 
-          $buildInfo = @"
-          HBCE - Hybrid Controls Editor
-          Version  : $ver
-          Built    : $date
-          Commit   : $sha
-          Platform : Windows (GitHub Actions)
-          Repo     : https://github.com/Munchi-z/HBC-Editor
-          "@
-          $buildInfo | Out-File -FilePath "dist\HBCE\BUILD_INFO.txt" -Encoding utf8
+          "HBCE - Hybrid Controls Editor`r`nVersion : $ver`r`nBuilt   : $date`r`nCommit  : $sha`r`nRepo    : https://github.com/Munchi-z/HBC-Editor" `
+            | Out-File "dist\HBCE\BUILD_INFO.txt" -Encoding utf8
 
-          $howTo = @"
-          HBCE - Hybrid Controls Editor $ver
-          ==========================================
+          "HBCE $ver`r`n`r`nHOW TO RUN:`r`n  Extract this folder anywhere, double-click HBCE.exe`r`n  No install needed. Default username: admin`r`n`r`nRequires Windows 10 or 11 (64-bit)`r`nSupport: https://github.com/Munchi-z/HBC-Editor" `
+            | Out-File "dist\HBCE\HOW_TO_RUN.txt" -Encoding utf8
 
-          HOW TO RUN:
-            1. Extract this entire folder anywhere on your PC
-            2. Double-click HBCE.exe
-            No installation needed. No admin rights needed.
-
-          FIRST LAUNCH:
-            Set a password for the admin account when prompted.
-            Default username: admin
-
-          REQUIREMENTS:
-            Windows 10 or Windows 11 (64-bit)
-
-          SUPPORT:
-            https://github.com/Munchi-z/HBC-Editor
-          "@
-          $howTo | Out-File -FilePath "dist\HBCE\HOW_TO_RUN.txt" -Encoding utf8
           Write-Host "Info files written."
 
-      # ── 12. Zip the output ────────────────────────────────────────────────
-      - name: Zip build output
+      # ── 12. Zip output ────────────────────────────────────────────────────
+      - name: Zip build
+        id: zip
         shell: pwsh
         run: |
           $ver = "${{ steps.version.outputs.VERSION }}"
           $zip = "HBCE-$ver-windows.zip"
           Compress-Archive -Path "dist\HBCE\*" -DestinationPath $zip -Force
-          $mb = (Get-Item $zip).Length / 1MB
-          Write-Host ("Created $zip ({0:N1} MB)" -f $mb)
-          echo "ZIP_NAME=$zip" >> $env:GITHUB_OUTPUT
-        id: zip
+          $mb = (Get-Item $zip).Length/1MB
+          Write-Host ("Zipped: $zip ({0:N1} MB)" -f $mb)
+          "ZIP_NAME=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── 13. Upload artifact (downloadable from Actions tab) ───────────────
+      # ── 13. Upload artifact ───────────────────────────────────────────────
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -288,16 +249,16 @@ jobs:
         with:
           name: "HBCE ${{ steps.version.outputs.VERSION }}"
           draft: false
-          prerelease: ${{ contains(steps.version.outputs.VERSION, 'beta') || contains(steps.version.outputs.VERSION, 'alpha') }}
+          prerelease: ${{ contains(steps.version.outputs.VERSION, 'alpha') || contains(steps.version.outputs.VERSION, 'beta') }}
           body: |
             ## HBCE — Hybrid Controls Editor ${{ steps.version.outputs.VERSION }}
 
             ### How to install
             1. Download `HBCE-${{ steps.version.outputs.VERSION }}-windows.zip` below
             2. Extract the folder anywhere on your PC
-            3. Double-click `HBCE.exe` — no install needed
+            3. Double-click `HBCE.exe` — no install or Python needed
 
-            **Requirements:** Windows 10 or 11 (64-bit)
+            **Requires:** Windows 10 or 11 (64-bit)
 
             ---
             Built by GitHub Actions · Commit `${{ github.sha }}`
