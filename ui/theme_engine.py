@@ -67,6 +67,35 @@ LIGHT_DEFAULT = {
     "font_size":       10,
 }
 
+# ── Soft Light — easy-on-eyes default ─────────────────────────────────────────
+# Warm off-white backgrounds (no blinding pure white), muted blue accent,
+# slightly reduced contrast so long sessions aren't fatiguing.
+LIGHT_SOFT = {
+    "mode":            "light_soft",
+    # Backgrounds: warm blue-grey tones instead of stark white
+    "bg_primary":      "#F2F3F7",   # main window — off-white blue-grey
+    "bg_secondary":    "#E7E9F2",   # sidebars, toolbars, panel headers
+    "bg_panel":        "#F8F9FD",   # content areas (tables, editors)
+    "bg_input":        "#FFFFFF",   # input fields stay clean white
+    # Accent: calm steel blue — readable without eye strain
+    "accent":          "#3B7DD8",
+    "accent_hover":    "#2F6CBD",
+    "accent_press":    "#2459A2",
+    # Text: near-black primary, blue-grey secondary — not pure black
+    "text_primary":    "#1C2030",
+    "text_secondary":  "#566078",
+    "text_disabled":   "#A8B2C4",
+    # Borders: soft, low-contrast
+    "border":          "#CDD2E0",
+    "border_focus":    "#3B7DD8",
+    # Semantic colors: desaturated for calm data-heavy UI
+    "success":         "#2A7A52",
+    "warning":         "#A85C10",
+    "error":           "#C22B38",
+    "font_family":     "Segoe UI",
+    "font_size":       10,
+}
+
 
 def build_qss(c: dict) -> str:
     """Generate complete QSS from a color palette dict."""
@@ -395,8 +424,13 @@ class ThemeEngine:
         self.current_palette = self._load_palette()
 
     def _load_palette(self) -> dict:
-        mode = self.config.get("theme", "dark_default")
-        base = dict(LIGHT_DEFAULT if mode == "light_default" else DARK_DEFAULT)
+        mode = self.config.get("theme", "light_soft")   # default: soft light
+        if mode == "light_soft":
+            base = dict(LIGHT_SOFT)
+        elif mode == "light_default":
+            base = dict(LIGHT_DEFAULT)
+        else:
+            base = dict(DARK_DEFAULT)
         for key in ["bg_primary","bg_secondary","bg_panel","bg_input","accent",
                     "text_primary","text_secondary","border","font_family","font_size"]:
             val = self.config.get(f"theme_{key}")
@@ -414,12 +448,12 @@ class ThemeEngine:
         logger.debug("Theme applied")
 
     def toggle_mode(self, app: QApplication):
-        if self.current_palette.get("mode","dark") == "dark":
-            self.current_palette = dict(LIGHT_DEFAULT)
-            self.config.set_and_save("theme","light_default")
-        else:
+        if self.current_palette.get("mode", "light_soft") in ("light_soft", "light_default"):
             self.current_palette = dict(DARK_DEFAULT)
-            self.config.set_and_save("theme","dark_default")
+            self.config.set_and_save("theme", "dark_default")
+        else:
+            self.current_palette = dict(LIGHT_SOFT)
+            self.config.set_and_save("theme", "light_soft")
         self.apply_theme(app)
 
     def get_color(self, key: str) -> str:
@@ -465,8 +499,14 @@ class ColorPickerDialog(QDialog):
         row = QHBoxLayout()
         row.addWidget(QLabel("Base Mode:"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Dark","Light"])
-        self.mode_combo.setCurrentText("Dark" if self._palette.get("mode","dark")=="dark" else "Light")
+        self.mode_combo.addItems(["Soft Light (default)", "Light", "Dark"])
+        _mode = self._palette.get("mode", "light_soft")
+        if _mode == "dark":
+            self.mode_combo.setCurrentText("Dark")
+        elif _mode == "light_default":
+            self.mode_combo.setCurrentText("Light")
+        else:
+            self.mode_combo.setCurrentText("Soft Light (default)")
         self.mode_combo.currentTextChanged.connect(self._on_mode)
         row.addWidget(self.mode_combo)
         row.addStretch()
@@ -535,5 +575,10 @@ class ColorPickerDialog(QDialog):
 
     def get_palette(self) -> dict:
         self._palette["font_size"] = self.font_spin.value()
-        self._palette["mode"] = self.mode_combo.currentText().lower()
+        mode_map = {
+            "Dark":                "dark",
+            "Light":               "light_default",
+            "Soft Light (default)":"light_soft",
+        }
+        self._palette["mode"] = mode_map.get(self.mode_combo.currentText(), "light_soft")
         return self._palette

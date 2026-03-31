@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 
 # Default config values
 DEFAULTS = {
-    "theme": "dark_default",
+    "theme": "light_soft",
     "theme_accent": "#00AAFF",
     "theme_bg_primary": "#1E1E2E",
     "theme_bg_secondary": "#2A2A3E",
