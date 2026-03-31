@@ -3,7 +3,7 @@
 
 VERSION_MAJOR = 0
 VERSION_MINOR = 1
-VERSION_PATCH = 0
+VERSION_PATCH = 1
 VERSION_LABEL = "alpha"
 
 VERSION = f"V{VERSION_MAJOR}.{VERSION_MINOR}.{VERSION_PATCH}-{VERSION_LABEL}" \
@@ -19,6 +19,7 @@ APP_URL       = "https://github.com/Munchi-z/HBC-Editor"
 BUILD_DATE    = "2026-03-31"
 
 # ── Version history ─────────────────────────────────────────────────────────
+# V0.1.1-alpha  2026-03-31  Trend Viewer — full implementation
 # V0.1.0-alpha  2026-03-31  Version milestone — alarm viewer fix + security stubs
 # V0.0.9-alpha  2026-03-30  Alarm Viewer visual redesign + crash handler
 # V0.0.8-alpha  2026-03-30  Alarm Viewer — full implementation
