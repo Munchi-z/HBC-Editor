@@ -3,11 +3,11 @@
 
 VERSION_MAJOR = 0
 VERSION_MINOR = 1
-VERSION_PATCH = 2
-VERSION_LABEL = "a-alpha"
+VERSION_PATCH = 3
+VERSION_LABEL = "alpha"
 
 # Label is appended with no separator if it starts with a letter suffix (e.g. "a-alpha")
-_patch_str = f"{VERSION_PATCH}{VERSION_LABEL}" if VERSION_LABEL else str(VERSION_PATCH)
+_patch_str = f"{VERSION_PATCH}-{VERSION_LABEL}" if VERSION_LABEL else str(VERSION_PATCH)
 VERSION = f"V{VERSION_MAJOR}.{VERSION_MINOR}.{_patch_str}"
 
 VERSION_TUPLE = (VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH)

@@ -67,31 +67,39 @@ LIGHT_DEFAULT = {
     "font_size":       10,
 }
 
-# ── Soft Light — easy-on-eyes default ─────────────────────────────────────────
-# Warm off-white backgrounds (no blinding pure white), muted blue accent,
-# slightly reduced contrast so long sessions aren't fatiguing.
+# ── Warm Slate — easy-on-eyes default ────────────────────────────────────────
+# Inspired by professional engineering tools (Niagara, Studio 5000).
+# Warm neutral mid-tones — no harsh whites, no eye-fatiguing contrast.
+# Sidebar and toolbar are noticeably darker than the content area,
+# giving strong visual structure without dark mode aggression.
 LIGHT_SOFT = {
     "mode":            "light_soft",
-    # Backgrounds: warm blue-grey tones instead of stark white
-    "bg_primary":      "#F2F3F7",   # main window — off-white blue-grey
-    "bg_secondary":    "#E7E9F2",   # sidebars, toolbars, panel headers
-    "bg_panel":        "#F8F9FD",   # content areas (tables, editors)
-    "bg_input":        "#FFFFFF",   # input fields stay clean white
-    # Accent: calm steel blue — readable without eye strain
-    "accent":          "#3B7DD8",
-    "accent_hover":    "#2F6CBD",
-    "accent_press":    "#2459A2",
-    # Text: near-black primary, blue-grey secondary — not pure black
-    "text_primary":    "#1C2030",
-    "text_secondary":  "#566078",
-    "text_disabled":   "#A8B2C4",
-    # Borders: soft, low-contrast
-    "border":          "#CDD2E0",
-    "border_focus":    "#3B7DD8",
-    # Semantic colors: desaturated for calm data-heavy UI
-    "success":         "#2A7A52",
-    "warning":         "#A85C10",
-    "error":           "#C22B38",
+
+    # ── Backgrounds ──────────────────────────────────────────────────────────
+    "bg_primary":      "#DDE1EA",   # main window — medium warm slate
+    "bg_secondary":    "#C8CDD8",   # sidebar, toolbars, panel headers — darker
+    "bg_panel":        "#EFF1F5",   # table / content areas — light but not white
+    "bg_input":        "#F7F8FC",   # text inputs — just off-white
+
+    # ── Accent: professional steel blue ──────────────────────────────────────
+    "accent":          "#2B6CB0",
+    "accent_hover":    "#245E9E",
+    "accent_press":    "#1D4F8A",
+
+    # ── Text ─────────────────────────────────────────────────────────────────
+    "text_primary":    "#1A1F2E",   # near-black, warm tint — not pure #000
+    "text_secondary":  "#4A5368",   # blue-grey mid — readable without harshness
+    "text_disabled":   "#9AA0B2",
+
+    # ── Borders ──────────────────────────────────────────────────────────────
+    "border":          "#B8BECE",   # visible but not distracting
+    "border_focus":    "#2B6CB0",
+
+    # ── Semantic ─────────────────────────────────────────────────────────────
+    "success":         "#1E6E47",
+    "warning":         "#8C4D0A",
+    "error":           "#B02030",
+
     "font_family":     "Segoe UI",
     "font_size":       10,
 }
