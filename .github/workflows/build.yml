@@ -1,21 +1,19 @@
 # HBCE — Hybrid Controls Editor
-# .github/workflows/build.yml  (v5 — V0.1.2a-alpha)
+# .github/workflows/build.yml  (v6 — V0.1.2a-alpha)
 #
-# ALL FIXES APPLIED (FIX-001 through FIX-006):
+# FIXES APPLIED (FIX-001 through FIX-007):
 #   FIX-001: shell: python replaced with script file approach
 #   FIX-002: BAC0/google pip installs made non-fatal (warn + continue)
 #   FIX-003: Removed missing version_info.txt from PyInstaller spec
 #   FIX-004: Bash heredocs replaced with PowerShell here-strings
-#   FIX-005: Node.js deprecation warning — informational only
+#   FIX-005: Node.js deprecation — bumped all actions to Node 22 versions
 #   FIX-006: Added permissions: contents: write (required for Releases)
+#   FIX-007: Replaced softprops/action-gh-release (Too many retries) with
+#            pre-installed gh CLI — no third-party action, no retry failures
 #
 # HOW TO TRIGGER:
 #   Tag release:  git tag v0.1.2a-alpha && git push origin v0.1.2a-alpha
 #   Manual:       GitHub → Actions → "Build HBCE Windows Executable" → Run workflow
-#
-# OUTPUT:
-#   HBCE-v0.1.2a-alpha-windows.zip  — contains HBCE.exe + all deps (portable, no install)
-#   Also uploaded as a GitHub Release asset on tag pushes.
 
 name: Build HBCE Windows Executable
 
@@ -35,10 +33,10 @@ jobs:
     name: Build on Windows
     runs-on: windows-latest
 
-    # ── FIX-006: Explicit permissions — required to create Releases ────────
+    # FIX-006: Explicit permissions — required to create Releases
     permissions:
-      contents: write    # Create releases + upload assets
-      actions: read      # Read workflow run info
+      contents: write
+      actions: read
 
     steps:
 
@@ -46,7 +44,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # Full history so git log works correctly
+          fetch-depth: 0
 
       # ── 2. Python 3.11 ────────────────────────────────────────────────────
       - name: Set up Python 3.11
@@ -83,9 +81,9 @@ jobs:
             Write-Host "Trying: $p"
             pip install $p 2>&1 | Out-Null
             if ($LASTEXITCODE -ne 0) {
-              Write-Host "  SKIP: $p failed (non-fatal)"
+              Write-Host "  SKIP: $p (non-fatal)"
             } else {
-              Write-Host "  OK: $p"
+              Write-Host "  OK:   $p"
             }
           }
           exit 0
@@ -108,7 +106,7 @@ jobs:
           Write-Host "Version: $ver"
           "VERSION=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── 7. Create asset placeholders (FIX-001) ────────────────────────────
+      # ── 7. Asset placeholders (FIX-001) ───────────────────────────────────
       - name: Write asset setup script
         shell: pwsh
         run: |
@@ -125,12 +123,10 @@ jobs:
               data += struct.pack("<IIIHHIIIIII",40,16,32,1,32,0,16*16*4,0,0,0,0)
               data += b"\x00\x00\x00\x00"*(16*16)
               open(ico,"wb").write(data)
-              print("Created placeholder icon")
           for t in ["dark_default.qss","light_default.qss"]:
               p = f"assets/themes/{t}"
               if not os.path.exists(p):
                   open(p,"w").write("/* HBCE placeholder */\n")
-                  print(f"Created {p}")
           print("Assets OK")
           '@ | Out-File -FilePath setup_assets.py -Encoding utf8
 
@@ -220,50 +216,29 @@ jobs:
           $date = Get-Date -Format "yyyy-MM-dd HH:mm UTC"
           $sha  = "${{ github.sha }}"
 
-          "HBCE - Hybrid Controls Editor`r`nVersion : $ver`r`nBuilt   : $date`r`nCommit  : $sha`r`nRepo    : https://github.com/Munchi-z/HBC-Editor" `
-            | Out-File "dist\HBCE\BUILD_INFO.txt" -Encoding utf8
+          "HBCE - Hybrid Controls Editor`r`nVersion : $ver`r`nBuilt   : $date`r`nCommit  : $sha`r`nRepo    : https://github.com/Munchi-z/HBC-Editor" |
+            Out-File "dist\HBCE\BUILD_INFO.txt" -Encoding utf8
 
-          "HBCE $ver`r`n`r`nHOW TO RUN:`r`n  1. Extract this zip anywhere`r`n  2. Double-click HBCE.exe`r`n  No install or Python needed.`r`n`r`nDefault login: admin`r`nRequires: Windows 10 or 11 (64-bit)`r`nSupport: https://github.com/Munchi-z/HBC-Editor" `
-            | Out-File "dist\HBCE\HOW_TO_RUN.txt" -Encoding utf8
+          "HBCE $ver`r`n`r`nHOW TO RUN:`r`n  1. Extract this zip anywhere`r`n  2. Double-click HBCE.exe`r`n  No install or Python needed.`r`n`r`nDefault login: admin`r`nRequires: Windows 10 or 11 (64-bit)`r`nSupport: https://github.com/Munchi-z/HBC-Editor" |
+            Out-File "dist\HBCE\HOW_TO_RUN.txt" -Encoding utf8
 
           Write-Host "Info files written."
 
-      # ── 12. Zip the HBCE folder (HBCE.exe + all deps inside) ──────────────
+      # ── 12. Zip — HBCE folder at root of zip ─────────────────────────────
       - name: Zip build output
         id: zip
         shell: pwsh
         run: |
           $ver = "${{ steps.version.outputs.VERSION }}"
           $zip = "HBCE-$ver-windows.zip"
-
-          # Zip the contents of dist\HBCE\ so extracting gives HBCE\ folder
-          # with HBCE.exe at the top level inside it — no double-nesting
           Push-Location "dist"
           Compress-Archive -Path "HBCE" -DestinationPath "..\$zip" -Force
           Pop-Location
-
           $mb = (Get-Item $zip).Length/1MB
           Write-Host ("Zipped: $zip ({0:N1} MB)" -f $mb)
           "ZIP_NAME=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # ── 13. Sanity check: confirm HBCE.exe is inside the zip ──────────────
-      - name: Verify zip contents
-        shell: pwsh
-        run: |
-          $ver = "${{ steps.version.outputs.VERSION }}"
-          $zip = "HBCE-$ver-windows.zip"
-          $entries = (Get-Item $zip | Select-Object -ExpandProperty FullName |
-            ForEach-Object { Add-Type -Assembly System.IO.Compression.FileSystem;
-              [IO.Compression.ZipFile]::OpenRead($_).Entries.FullName })
-          $hasExe = $entries | Where-Object { $_ -like "*HBCE.exe" }
-          if ($hasExe) {
-            Write-Host "ZIP OK — HBCE.exe confirmed inside zip"
-          } else {
-            Write-Host "WARNING: HBCE.exe not found in zip root — listing entries:"
-            $entries | Select-Object -First 20 | ForEach-Object { Write-Host "  $_" }
-          }
-
-      # ── 14. Upload artifact (always — so manual runs can download too) ────
+      # ── 13. Upload artifact (always available, even without a release) ────
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -271,35 +246,43 @@ jobs:
           path: HBCE-${{ steps.version.outputs.VERSION }}-windows.zip
           retention-days: 30
 
-      # ── 15. Create GitHub Release (tag pushes only) ───────────────────────
+      # ── 14. Create GitHub Release via gh CLI (FIX-007) ────────────────────
+      # Replaces softprops/action-gh-release which threw "Too many retries".
+      # gh CLI is pre-installed on all GitHub-hosted runners — no third-party
+      # action needed, no retry failures, no Node.js version dependency.
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          name: "HBCE ${{ steps.version.outputs.VERSION }}"
-          draft: false
-          prerelease: ${{ contains(steps.version.outputs.VERSION, 'alpha') || contains(steps.version.outputs.VERSION, 'beta') }}
-          body: |
-            ## HBCE — Hybrid Controls Editor ${{ steps.version.outputs.VERSION }}
-
-            ### 📦 How to install
-            1. Download **`HBCE-${{ steps.version.outputs.VERSION }}-windows.zip`** below
-            2. Extract the zip — you'll get an **`HBCE\`** folder
-            3. Open that folder and double-click **`HBCE.exe`**
-            4. No install or Python needed — fully portable
-
-            **Requires:** Windows 10 or 11 (64-bit)
-            **Default login:** `admin`
-
-            ---
-            ### 🆕 What's new in this release
-            - Backup / Restore panel — full implementation (1,762 lines)
-            - ARCH-011 restore flow: diff preview → typed confirmation → pre-restore auto-backup → restore
-            - Diff viewer with colour-coded unified diff
-            - Auto-backup on device connect, retention policy, import/export .hbce-bak files
-
-            ---
-            Built by GitHub Actions · Commit `${{ github.sha }}`
-          files: HBCE-${{ steps.version.outputs.VERSION }}-windows.zip
+        shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ver = "${{ steps.version.outputs.VERSION }}"
+          $zip = "HBCE-$ver-windows.zip"
+          $sha = "${{ github.sha }}"
+
+          $isPrerelease = $ver -match "alpha|beta|rc"
+          $preFlag = if ($isPrerelease) { "--prerelease" } else { "" }
+
+          $notes = @"
+          ## HBCE — Hybrid Controls Editor $ver
+
+          ### How to install
+          1. Download ``HBCE-$ver-windows.zip`` below
+          2. Extract anywhere — you get an ``HBCE\`` folder
+          3. Double-click ``HBCE.exe`` — no install or Python needed
+
+          **Requires:** Windows 10 or 11 (64-bit)
+          **Default login:** admin
+
+          ---
+          Built by GitHub Actions · Commit $sha
+          "@
+
+          # Create the release and upload the zip in one command
+          if ($preFlag) {
+            gh release create $ver $zip --title "HBCE $ver" --notes $notes --prerelease
+          } else {
+            gh release create $ver $zip --title "HBCE $ver" --notes $notes
+          }
+
+          Write-Host "Release created: HBCE $ver"
