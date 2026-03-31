@@ -43,6 +43,7 @@ from PyQt6.QtGui import (
     QPainterPath,
     QPen,
 )
+from PyQt6.QtWidgets import QStyle
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -336,7 +337,7 @@ class AlarmRowDelegate(QStyledItemDelegate):
 
         col      = index.column()
         rect     = option.rect
-        selected = bool(option.state & option.state.State.Selected)
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
 
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)

@@ -308,10 +308,11 @@ class _CrashSignalBridge(QObject):
 
 _bridge: Optional[_CrashSignalBridge] = None
 
+# ── Reentrance + deduplication guards ────────────────────────────────────
+_handling_crash  = False          # prevents recursive crash-in-crash-handler
+_last_crash_sig  = ""             # deduplicates identical repeated crashes
+_last_crash_time = 0.0
 
-# ---------------------------------------------------------------------------
-# Core handler function
-# ---------------------------------------------------------------------------
 
 def _handle_crash(
     exc_type:  Type[BaseException],
@@ -320,26 +321,40 @@ def _handle_crash(
     source: str = "main thread",
 ):
     """Central crash handler — called from all hook entry points."""
+    global _handling_crash, _last_crash_sig, _last_crash_time
+    import time as _time
 
     # Don't handle KeyboardInterrupt as a crash
     if issubclass(exc_type, KeyboardInterrupt):
         sys.__excepthook__(exc_type, exc_value, exc_tb)
         return
 
-    report       = _build_crash_report(exc_type, exc_value, exc_tb, source)
-    crash_log    = _get_crash_log_path()
+    # ── Reentrance guard: if the crash handler itself crashes, bail out ──
+    if _handling_crash:
+        return
+    _handling_crash = True
 
-    _write_crash_log(report)
+    try:
+        # ── Deduplication: same exception type+message within 5 s → skip dialog
+        crash_sig = f"{exc_type.__name__}:{exc_value}"
+        now       = _time.monotonic()
+        show_dialog = (crash_sig != _last_crash_sig) or (now - _last_crash_time > 5.0)
+        _last_crash_sig  = crash_sig
+        _last_crash_time = now
 
-    # Always print to stderr (visible in dev console / PyInstaller --console)
-    print(report, file=sys.stderr)
+        report    = _build_crash_report(exc_type, exc_value, exc_tb, source)
+        crash_log = _get_crash_log_path()
 
-    # Show dialog — use signal bridge if we're on a non-main thread
-    if _bridge is not None:
-        try:
-            _bridge.show_dialog.emit(report, str(crash_log))
-        except Exception:
-            pass
+        _write_crash_log(report)
+        print(report, file=sys.stderr)
+
+        if show_dialog and _bridge is not None:
+            try:
+                _bridge.show_dialog.emit(report, str(crash_log))
+            except Exception:
+                pass
+    finally:
+        _handling_crash = False
 
 
 # ---------------------------------------------------------------------------
