@@ -3,7 +3,7 @@
 
 VERSION_MAJOR = 0
 VERSION_MINOR = 1
-VERSION_PATCH = 8
+VERSION_PATCH = 9
 VERSION_LABEL = "alpha"
 
 # Label is appended with no separator if it starts with a letter suffix (e.g. "a-alpha")
@@ -19,6 +19,9 @@ APP_URL       = "https://github.com/Munchi-z/HBC-Editor"
 BUILD_DATE    = "2026-04-01"
 
 # ── Version history ─────────────────────────────────────────────────────────
+# V0.1.9-alpha  2026-04-01  CloudSyncPanel in Backup/Restore (Tab 3)
+#                           Google Drive + OneDrive auth, upload, download
+#                           Auto-sync trigger + selection bridge
 # V0.1.8-alpha  2026-04-01  FIX: graphic_editor _view AttributeError
 #                           Connection Wizard vendor profile tips
 #                           data/cloud_sync.py (733 ln), tests/ smoke suite

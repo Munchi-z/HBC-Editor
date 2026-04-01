@@ -1,6 +1,11 @@
 # ui/panels/backup_restore.py
 # HBCE — Hybrid Controls Editor
-# Backup / Restore Panel — Full Implementation V0.1.2-alpha
+# Backup / Restore Panel — Full Implementation V0.1.9-alpha
+#
+# V0.1.9 additions:
+#   - CloudSyncPanel widget (Google Drive + OneDrive) as right-side Tab 3
+#   - Selection bridge: selecting a backup notifies CloudSyncPanel
+#   - Auto-sync trigger: on successful backup, CloudSyncPanel.trigger_auto_sync()
 #
 # Visual approach: consistent with AlarmViewer (stripe + pill style)
 #   - 4 px left accent stripe per backup type
@@ -60,10 +65,13 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QSplitter,
@@ -79,6 +87,16 @@ from PyQt6.QtWidgets import (
 )
 
 from core.logger import get_logger
+
+# Cloud sync — imported lazily so the panel works even without cloud libs
+try:
+    from data.cloud_sync import (
+        CloudSyncManager, SyncProvider, CloudSyncThread,
+    )
+    from pathlib import Path as _Path
+    _CLOUD_AVAILABLE = True
+except Exception:
+    _CLOUD_AVAILABLE = False
 
 logger = get_logger(__name__)
 
@@ -966,6 +984,491 @@ class BackupDetailPanel(QWidget):
 
 
 # ---------------------------------------------------------------------------
+# Cloud Sync Panel  (Tab 3 inside BackupRestorePanel's right QTabWidget)
+# ---------------------------------------------------------------------------
+
+class CloudSyncPanel(QWidget):
+    """
+    ☁ Cloud Sync — Google Drive + OneDrive integration.
+
+    Layout:
+      Top:    Two provider cards (Google Drive / OneDrive)
+               Each card: status indicator + auth button (Connect / Disconnect)
+      Middle: Upload section — Upload Selected Backup / Upload DB / Upload Project
+      Bottom: Download section — remote file list + Download Selected
+      Footer: Auto-sync checkbox + progress bar + status label
+
+    All I/O runs through CloudSyncThread (GOTCHA-013 compliant).
+    token_expired signal → QMessageBox prompts re-authentication.
+    """
+
+    def __init__(self, config=None, db=None, current_user=None, parent=None):
+        super().__init__(parent)
+        self.config       = config
+        self.db           = db
+        self.current_user = current_user or {}
+        self._sync_mgr:    Optional[object] = None
+        self._sync_thread: Optional[object] = None
+        self._selected_backup_path: str = ""
+
+        if _CLOUD_AVAILABLE:
+            try:
+                cfg_dir = self._config_dir()
+                self._sync_mgr = CloudSyncManager.from_config_dir(cfg_dir)
+            except Exception as e:
+                logger.warning(f"CloudSyncManager init: {e}")
+
+        self._build_ui()
+        if _CLOUD_AVAILABLE and self._sync_mgr:
+            self._refresh_status()
+
+    # ── Config dir ────────────────────────────────────────────────────────────
+
+    def _config_dir(self):
+        app_data = os.environ.get("APPDATA", os.path.expanduser("~"))
+        return _Path(app_data) / "HBCE"
+
+    # ── UI construction ───────────────────────────────────────────────────────
+
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
+
+        if not _CLOUD_AVAILABLE:
+            warn = QLabel(
+                "⚠  Cloud sync libraries not installed.\n\n"
+                "Install google-api-python-client, google-auth-oauthlib\n"
+                "and msal to enable Google Drive and OneDrive sync."
+            )
+            warn.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            warn.setStyleSheet("color:#808090; font-size:9pt;")
+            root.addWidget(warn)
+            return
+
+        # ── Provider cards ────────────────────────────────────────────────────
+        root.addWidget(self._build_provider_section())
+
+        # ── Upload section ────────────────────────────────────────────────────
+        root.addWidget(self._build_upload_section())
+
+        # ── Download section ──────────────────────────────────────────────────
+        root.addWidget(self._build_download_section())
+
+        root.addStretch()
+
+        # ── Auto-sync + progress footer ───────────────────────────────────────
+        root.addWidget(self._build_footer())
+
+    def _card_style(self) -> str:
+        return (
+            "QFrame { background:#1a1a2e; border:1px solid #2a2a4e; "
+            "border-radius:8px; padding:2px; }"
+        )
+
+    def _section_label(self, text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setStyleSheet("font-weight:bold; color:#9090B0; font-size:8pt; "
+                          "text-transform:uppercase; letter-spacing:1px;")
+        return lbl
+
+    def _build_provider_section(self) -> QWidget:
+        w   = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        lay.addWidget(self._section_label("☁  Cloud Providers"))
+
+        cards_row = QHBoxLayout()
+        cards_row.setSpacing(8)
+
+        # Google Drive card
+        self._gdrive_card  = self._make_provider_card(
+            "Google Drive", "google_drive", "#4285F4")
+        # OneDrive card
+        self._onedrive_card = self._make_provider_card(
+            "Microsoft OneDrive", "onedrive", "#0078D4")
+
+        cards_row.addWidget(self._gdrive_card)
+        cards_row.addWidget(self._onedrive_card)
+        lay.addLayout(cards_row)
+        return w
+
+    def _make_provider_card(self, display_name: str,
+                            provider_key: str, accent: str) -> QFrame:
+        card = QFrame()
+        card.setStyleSheet(self._card_style())
+        card.setFixedHeight(90)
+        lay = QHBoxLayout(card)
+        lay.setContentsMargins(12, 8, 12, 8)
+        lay.setSpacing(10)
+
+        # Colour blob
+        blob = QLabel("●")
+        blob.setStyleSheet(f"color:{accent}; font-size:18pt; background:transparent;")
+        blob.setFixedWidth(28)
+        lay.addWidget(blob)
+
+        # Name + status
+        info = QVBoxLayout()
+        name_lbl = QLabel(display_name)
+        name_lbl.setStyleSheet("font-weight:bold; color:#C0C0D0; background:transparent;")
+        info.addWidget(name_lbl)
+
+        status_lbl = QLabel("Not connected")
+        status_lbl.setStyleSheet("color:#606070; font-size:8pt; background:transparent;")
+        info.addWidget(status_lbl)
+        lay.addLayout(info, 1)
+
+        # Auth button
+        auth_btn = QPushButton("Connect")
+        auth_btn.setFixedSize(90, 28)
+        auth_btn.setStyleSheet(f"""
+            QPushButton {{
+                background:{accent}; color:white; border:none;
+                border-radius:4px; font-size:8pt; font-weight:bold;
+            }}
+            QPushButton:hover {{ background:{accent}CC; }}
+            QPushButton:disabled {{ background:#333344; color:#606070; }}
+        """)
+        lay.addWidget(auth_btn)
+
+        # Store refs
+        key = provider_key
+        auth_btn.clicked.connect(lambda _, k=key: self._toggle_auth(k))
+        card.setProperty("provider_key",  key)
+        card.setProperty("status_lbl",    status_lbl)
+        card.setProperty("auth_btn",      auth_btn)
+        return card
+
+    def _build_upload_section(self) -> QWidget:
+        w   = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        lay.addWidget(self._section_label("⬆  Upload"))
+
+        frame = QFrame()
+        frame.setStyleSheet(self._card_style())
+        fl = QVBoxLayout(frame)
+        fl.setContentsMargins(12, 10, 12, 10)
+        fl.setSpacing(6)
+
+        # Provider selector row
+        prov_row = QHBoxLayout()
+        prov_row.addWidget(QLabel("Provider:"))
+        self._upload_combo = QComboBox()
+        self._upload_combo.setFixedHeight(26)
+        self._upload_combo.addItem("Google Drive", "google_drive")
+        self._upload_combo.addItem("OneDrive",     "onedrive")
+        self._upload_combo.setStyleSheet(
+            "QComboBox { background:#252535; border:1px solid #2a2a4e; "
+            "border-radius:4px; color:#C0C0D0; padding:2px 6px; }"
+        )
+        prov_row.addWidget(self._upload_combo)
+        prov_row.addStretch()
+        fl.addLayout(prov_row)
+
+        # Upload buttons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+
+        self._upload_backup_btn = QPushButton("⬆  Upload Selected Backup")
+        self._upload_db_btn     = QPushButton("🗄  Upload Database")
+        for btn in (self._upload_backup_btn, self._upload_db_btn):
+            btn.setFixedHeight(28)
+            btn.setStyleSheet(self._upload_btn_style())
+            btn_row.addWidget(btn)
+
+        fl.addLayout(btn_row)
+        lay.addWidget(frame)
+
+        self._upload_backup_btn.clicked.connect(self._upload_selected_backup)
+        self._upload_db_btn.clicked.connect(self._upload_database)
+        return w
+
+    def _upload_btn_style(self) -> str:
+        return (
+            "QPushButton { background:#1e2a40; color:#7090D0; "
+            "border:1px solid #2a3a5a; border-radius:4px; "
+            "font-size:8pt; padding:0 8px; }"
+            "QPushButton:hover { background:#253050; color:#90B0F0; }"
+            "QPushButton:disabled { color:#404050; border-color:#1E1E2E; }"
+        )
+
+    def _build_download_section(self) -> QWidget:
+        w   = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        hdr = QHBoxLayout()
+        hdr.addWidget(self._section_label("⬇  Remote Files"))
+        hdr.addStretch()
+        self._refresh_remote_btn = QPushButton("🔄 Refresh")
+        self._refresh_remote_btn.setFixedSize(76, 22)
+        self._refresh_remote_btn.setStyleSheet(self._upload_btn_style())
+        self._refresh_remote_btn.clicked.connect(self._refresh_remote_list)
+        hdr.addWidget(self._refresh_remote_btn)
+        lay.addLayout(hdr)
+
+        frame = QFrame()
+        frame.setStyleSheet(self._card_style())
+        fl = QVBoxLayout(frame)
+        fl.setContentsMargins(8, 8, 8, 8)
+        fl.setSpacing(6)
+
+        self._remote_list = QListWidget()
+        self._remote_list.setFixedHeight(100)
+        self._remote_list.setStyleSheet(
+            "QListWidget { background:#131320; border:none; color:#C0C0D0; "
+            "font-size:8pt; } "
+            "QListWidget::item:selected { background:#1e2a40; color:#90B0FF; }"
+        )
+        self._remote_list.addItem("— click Refresh to load —")
+        fl.addWidget(self._remote_list)
+
+        self._download_btn = QPushButton("⬇  Download Selected")
+        self._download_btn.setFixedHeight(28)
+        self._download_btn.setStyleSheet(self._upload_btn_style())
+        self._download_btn.clicked.connect(self._download_selected)
+        fl.addWidget(self._download_btn)
+        lay.addWidget(frame)
+        return w
+
+    def _build_footer(self) -> QWidget:
+        w   = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+
+        self._auto_sync_chk = QCheckBox("Enable auto-sync after each backup")
+        self._auto_sync_chk.setStyleSheet("color:#808090; font-size:8pt;")
+        self._auto_sync_chk.setChecked(False)
+        lay.addWidget(self._auto_sync_chk)
+
+        self._cloud_progress = QProgressBar()
+        self._cloud_progress.setFixedHeight(6)
+        self._cloud_progress.setRange(0, 100)
+        self._cloud_progress.setValue(0)
+        self._cloud_progress.setVisible(False)
+        self._cloud_progress.setStyleSheet(
+            "QProgressBar { background:#1a1a2e; border:none; border-radius:3px; }"
+            "QProgressBar::chunk { background:#5C8AFF; border-radius:3px; }"
+        )
+        lay.addWidget(self._cloud_progress)
+
+        self._cloud_status_lbl = QLabel("")
+        self._cloud_status_lbl.setStyleSheet("color:#606070; font-size:8pt;")
+        lay.addWidget(self._cloud_status_lbl)
+        return w
+
+    # ── Provider auth toggle ──────────────────────────────────────────────────
+
+    def _toggle_auth(self, provider_key: str):
+        if not self._sync_mgr:
+            return
+        prov = (self._sync_mgr.google if provider_key == "google_drive"
+                else self._sync_mgr.onedrive)
+
+        if prov.is_authenticated():
+            if QMessageBox.question(
+                self, "Disconnect",
+                f"Disconnect from {provider_key.replace('_',' ').title()}?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            ) == QMessageBox.StandardButton.Yes:
+                prov.revoke()
+                self._refresh_status()
+                self._set_status(f"Disconnected from {provider_key.replace('_',' ').title()}.")
+        else:
+            self._set_status(f"Connecting to {provider_key.replace('_',' ').title()}…")
+            # Auth must happen in a background thread — it may open a browser
+            t = QThread()
+            t._provider    = prov
+            t._provider_key = provider_key
+            def _run():
+                t._provider.authenticate()
+            t.run = _run
+            t.finished.connect(lambda: self._on_auth_done(provider_key, t))
+            t.start()
+            self._sync_thread = t
+
+    def _on_auth_done(self, provider_key: str, thread):
+        self._refresh_status()
+        prov = (self._sync_mgr.google if provider_key == "google_drive"
+                else self._sync_mgr.onedrive)
+        if prov.is_authenticated():
+            self._set_status(f"✅ Connected to {provider_key.replace('_',' ').title()}.")
+        else:
+            self._set_status("⚠  Authentication failed. Check your credentials.")
+
+    # ── Status refresh ────────────────────────────────────────────────────────
+
+    def _refresh_status(self):
+        if not self._sync_mgr:
+            return
+        status = self._sync_mgr.status()
+        for card, key in ((self._gdrive_card,   "google_drive"),
+                          (self._onedrive_card, "onedrive")):
+            info  = status.get(key, {})
+            authed = info.get("authenticated", False)
+            s_lbl  = card.property("status_lbl")
+            a_btn  = card.property("auth_btn")
+            if s_lbl:
+                s_lbl.setText("✅ Connected" if authed else "Not connected")
+                s_lbl.setStyleSheet(
+                    f"color:{'#4CAF50' if authed else '#606070'}; "
+                    "font-size:8pt; background:transparent;"
+                )
+            if a_btn:
+                a_btn.setText("Disconnect" if authed else "Connect")
+
+    # ── Upload ────────────────────────────────────────────────────────────────
+
+    def _current_provider_enum(self):
+        idx = self._upload_combo.currentIndex()
+        key = self._upload_combo.itemData(idx)
+        return (SyncProvider.GOOGLE_DRIVE if key == "google_drive"
+                else SyncProvider.ONEDRIVE)
+
+    def _upload_selected_backup(self):
+        if not self._selected_backup_path:
+            QMessageBox.information(
+                self, "No backup selected",
+                "Select a backup from the list on the left first.",
+            )
+            return
+        self._run_upload(self._selected_backup_path)
+
+    def _upload_database(self):
+        app_data = os.environ.get("APPDATA", os.path.expanduser("~"))
+        db_path  = os.path.join(app_data, "HBCE", "hbce.db")
+        if not os.path.exists(db_path):
+            QMessageBox.warning(self, "Not Found",
+                                f"Database not found at:\n{db_path}")
+            return
+        self._run_upload(db_path)
+
+    def _run_upload(self, local_path: str):
+        if not self._sync_mgr:
+            return
+        prov = self._current_provider_enum()
+        self._cloud_progress.setVisible(True)
+        self._cloud_progress.setValue(0)
+        self._set_status("Uploading…")
+
+        t = self._sync_mgr.upload_async(local_path, prov, parent=self)
+        t.progress.connect(self._on_progress)
+        t.completed.connect(self._on_upload_done)
+        t.token_expired.connect(self._on_token_expired)
+        t.start()
+        self._sync_thread = t
+
+    def _on_upload_done(self, result):
+        self._cloud_progress.setVisible(False)
+        if result.success:
+            self._set_status(f"✅ {result.message}")
+        else:
+            self._set_status(f"⚠  {result.message}")
+
+    # ── Download ──────────────────────────────────────────────────────────────
+
+    def _refresh_remote_list(self):
+        if not self._sync_mgr:
+            return
+        self._remote_list.clear()
+        self._remote_list.addItem("Loading…")
+        prov = self._current_provider_enum()
+        # List synchronously for simplicity — fast on LAN/cloud
+        try:
+            files = self._sync_mgr.list_remote_files(prov)
+            self._remote_list.clear()
+            if not files:
+                self._remote_list.addItem("— no files found —")
+            else:
+                for f in files:
+                    name = f.get("name", f.get("id", "?"))
+                    size = f.get("size", "")
+                    modified = (f.get("modifiedTime", f.get("lastModifiedDateTime", ""))[:10])
+                    item = QListWidgetItem(f"📄  {name}   {modified}   {size}")
+                    item.setData(Qt.ItemDataRole.UserRole, name)
+                    self._remote_list.addItem(item)
+        except Exception as e:
+            self._remote_list.clear()
+            self._remote_list.addItem(f"Error: {e}")
+
+    def _download_selected(self):
+        if not self._sync_mgr:
+            return
+        item = self._remote_list.currentItem()
+        if not item:
+            return
+        remote_name = item.data(Qt.ItemDataRole.UserRole)
+        if not remote_name:
+            return
+
+        dest_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        os.makedirs(dest_dir, exist_ok=True)
+        dest_path = os.path.join(dest_dir, remote_name)
+
+        prov = self._current_provider_enum()
+        self._cloud_progress.setVisible(True)
+        self._cloud_progress.setValue(0)
+        self._set_status(f"Downloading {remote_name}…")
+
+        t = self._sync_mgr.download_async(remote_name, dest_path, prov, parent=self)
+        t.progress.connect(self._on_progress)
+        t.completed.connect(self._on_download_done)
+        t.token_expired.connect(self._on_token_expired)
+        t.start()
+        self._sync_thread = t
+
+    def _on_download_done(self, result):
+        self._cloud_progress.setVisible(False)
+        if result.success:
+            self._set_status(f"✅ {result.message}")
+            QMessageBox.information(self, "Download Complete",
+                                    f"File saved to Downloads folder.\n\n{result.message}")
+        else:
+            self._set_status(f"⚠  {result.message}")
+
+    # ── Shared signal handlers ────────────────────────────────────────────────
+
+    def _on_progress(self, pct: int, msg: str):
+        self._cloud_progress.setValue(pct)
+        self._set_status(msg)
+
+    def _on_token_expired(self, provider_name: str):
+        self._cloud_progress.setVisible(False)
+        QMessageBox.warning(
+            self, "Session Expired",
+            f"Your {provider_name} session has expired.\n"
+            "Please reconnect using the provider card above.",
+        )
+        self._refresh_status()
+
+    def _set_status(self, msg: str):
+        self._cloud_status_lbl.setText(msg)
+
+    # ── Public API (called by BackupRestorePanel) ─────────────────────────────
+
+    def set_selected_backup(self, file_path: str):
+        """Tell this panel which local backup file is currently selected."""
+        self._selected_backup_path = file_path
+
+    def trigger_auto_sync(self, file_path: str):
+        """Called after a successful backup when auto-sync is enabled."""
+        if not self._auto_sync_chk.isChecked():
+            return
+        if not self._sync_mgr:
+            return
+        enabled = self._sync_mgr.auto_sync_enabled_providers()
+        for prov in enabled:
+            self._run_upload(file_path)
+            break  # sync to first available provider only
+
+
+# ---------------------------------------------------------------------------
 # Main panel
 # ---------------------------------------------------------------------------
 
@@ -1157,6 +1660,13 @@ class BackupRestorePanel(QWidget):
 
         self._diff_viewer = DiffViewerWidget()
         self._tabs.addTab(self._diff_viewer, "🔍  Diff Viewer")
+
+        self._cloud_panel = CloudSyncPanel(
+            config=self.config,
+            db=self.db,
+            current_user=self.current_user,
+        )
+        self._tabs.addTab(self._cloud_panel, "☁  Cloud Sync")
 
         right_lay.addWidget(self._tabs)
         splitter.addWidget(right)
@@ -1352,6 +1862,9 @@ class BackupRestorePanel(QWidget):
             if entry:
                 self._detail_panel.load_entry(entry)
                 self._active_entry = entry
+                # Keep cloud panel informed so it knows what to upload
+                if hasattr(self, "_cloud_panel") and entry.file_path:
+                    self._cloud_panel.set_selected_backup(entry.file_path)
         elif not sel:
             self._detail_panel.clear()
             self._active_entry = None
@@ -1466,6 +1979,10 @@ class BackupRestorePanel(QWidget):
             self._active_entry.file_path = file_path
             self._active_entry.file_size = file_size
             self._detail_panel.load_entry(self._active_entry)
+
+        # Auto-sync to cloud if enabled
+        if hasattr(self, "_cloud_panel") and file_path:
+            self._cloud_panel.trigger_auto_sync(file_path)
 
     def _on_backup_failed(self, entry_id: int, error: str):
         self._model.update_entry(entry_id, "failed")
