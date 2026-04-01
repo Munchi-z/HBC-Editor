@@ -3,7 +3,7 @@
 
 VERSION_MAJOR = 0
 VERSION_MINOR = 1
-VERSION_PATCH = 3
+VERSION_PATCH = 4
 VERSION_LABEL = "alpha"
 
 # Label is appended with no separator if it starts with a letter suffix (e.g. "a-alpha")

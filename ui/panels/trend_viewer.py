@@ -938,7 +938,15 @@ class TrendViewerPanel(QWidget):
         self._h_line.setPos(y)
 
         # Build crosshair tooltip
-        dt_str  = datetime.fromtimestamp(x).strftime("%Y-%m-%d %H:%M:%S")
+        # Guard against invalid x values (0, negative, NaN, inf) before any
+        # data is loaded — datetime.fromtimestamp() raises OSError on Windows
+        # for out-of-range timestamps.  Added as GOTCHA-017.
+        try:
+            if not (1e6 < x < 32503680000):   # sane year 1970–3000 window
+                return
+            dt_str = datetime.fromtimestamp(x).strftime("%Y-%m-%d %H:%M:%S")
+        except (OSError, OverflowError, ValueError):
+            return
         lines   = [dt_str]
         for s in self._series.values():
             if not s.visible or len(s.samples) < 2:

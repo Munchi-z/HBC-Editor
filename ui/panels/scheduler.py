@@ -963,6 +963,19 @@ class SchedulerPanel(QWidget):
                 self.db.conn.commit()
             except Exception as e:
                 logger.warning(f"Schedules table init: {e}")
+            # Migration: add columns that didn't exist in older schema versions
+            migrations = [
+                "ALTER TABLE schedules ADD COLUMN device_name TEXT NOT NULL DEFAULT 'Local'",
+                "ALTER TABLE schedules ADD COLUMN schedule_name TEXT NOT NULL DEFAULT 'Schedule'",
+                "ALTER TABLE schedules ADD COLUMN object_instance INTEGER DEFAULT 1",
+                "ALTER TABLE schedules ADD COLUMN modified TEXT NOT NULL DEFAULT (datetime('now'))",
+            ]
+            for sql in migrations:
+                try:
+                    self.db.execute(sql)
+                    self.db.conn.commit()
+                except Exception:
+                    pass  # column already exists — safe to ignore
 
     def _get_devices(self) -> List[dict]:
         if self.db:
