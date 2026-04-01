@@ -43,6 +43,21 @@ from PyQt6.QtGui import QFont, QColor
 from core.logger import get_logger
 from comms import get_adapter, REGISTERED_ADAPTERS
 
+# Vendor profile registry (imported lazily to avoid circular deps)
+try:
+    from vendors import VENDOR_REGISTRY
+    _VENDOR_REGISTRY_AVAILABLE = True
+except Exception:
+    VENDOR_REGISTRY = {}
+    _VENDOR_REGISTRY_AVAILABLE = False
+
+# Wizard vendor IDs → VENDOR_REGISTRY keys
+_VENDOR_ID_ALIASES = {
+    "jci_metasys":     "johnson_controls",
+    "trane_tracer":    "trane",
+    "distech_eclypse": "distech",
+}
+
 logger = get_logger(__name__)
 
 # ── Vendor definitions ────────────────────────────────────────────────────────
@@ -566,7 +581,7 @@ class StepParams(WizardStep):
         help_L.addWidget(self._help_text)
         root.addWidget(self._help_panel, 1)
 
-    def set_protocol(self, protocol_id: str):
+    def set_protocol(self, protocol_id: str, vendor_id: str = ""):
         self._protocol_id = protocol_id
         self._fields.clear()
 
@@ -592,8 +607,28 @@ class StepParams(WizardStep):
             lbl.setStyleSheet("color: #C0C0D0; background: transparent;")
             self._form_layout.addRow(lbl, field)
 
-        # Update help text
+        # Build help HTML: protocol help + vendor-specific tips
         help_html = HELP_TEXT.get(protocol_id, "<i>No additional help for this protocol.</i>")
+
+        # Append vendor troubleshooting tips if a known profile is loaded
+        if vendor_id and _VENDOR_REGISTRY_AVAILABLE:
+            profile_key = _VENDOR_ID_ALIASES.get(vendor_id, vendor_id)
+            vendor_profile_cls = VENDOR_REGISTRY.get(profile_key)
+            if vendor_profile_cls:
+                try:
+                    tips = vendor_profile_cls.get_troubleshooting_tips()
+                    if tips:
+                        tips_html = (
+                            "<br><br><b>🔧 "
+                            + getattr(vendor_profile_cls, "DISPLAY_NAME", vendor_id)
+                            + " Tips:</b><br><ul style='margin:0;padding-left:16px;'>"
+                            + "".join(f"<li>{t}</li>" for t in tips)
+                            + "</ul>"
+                        )
+                        help_html += tips_html
+                except Exception as e:
+                    logger.debug(f"Could not load vendor tips: {e}")
+
         self._help_text.setHtml(help_html)
 
         # Refresh COM port options if needed (usb_direct / mstp / rtu)
@@ -1119,11 +1154,13 @@ class ConnectionWizardPanel(QWidget):
             if vendor:
                 self._step_protocol.set_vendor(vendor)
 
-        # Params step: sync protocol
+        # Params step: sync protocol + vendor tips
         if step == 2:
             pid = self._wizard_data.get("protocol_id")
+            vendor = self._wizard_data.get("vendor", {})
+            vendor_id = vendor.get("id", "")
             if pid:
-                self._step_params.set_protocol(pid)
+                self._step_params.set_protocol(pid, vendor_id)
 
         # Test step: sync params
         if step == 3:
