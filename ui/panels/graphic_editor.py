@@ -1134,7 +1134,7 @@ class GraphicEditorPanel(QWidget):
         _a("⊡ Fit","Fit all",           lambda: self._view.fit_all())
         _a("1:1","Reset zoom",           lambda: self._view.zoom_reset(),"Ctrl+0")
         tb.addSeparator()
-        _a("🔎 Search","Search blocks (Ctrl+Space)", self._palette.focus_search,"Ctrl+Space")
+        _a("🔎 Search","Search blocks (Ctrl+Space)", lambda: self._palette.focus_search(),"Ctrl+Space")
         return tb
 
     def _connect_signals(self):

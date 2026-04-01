@@ -4,7 +4,7 @@
 VERSION_MAJOR = 0
 VERSION_MINOR = 1
 VERSION_PATCH = 9
-VERSION_LABEL = "alpha"
+VERSION_LABEL = "a-alpha"
 
 # Label is appended with no separator if it starts with a letter suffix (e.g. "a-alpha")
 _patch_str = f"{VERSION_PATCH}-{VERSION_LABEL}" if VERSION_LABEL else str(VERSION_PATCH)
@@ -19,6 +19,10 @@ APP_URL       = "https://github.com/Munchi-z/HBC-Editor"
 BUILD_DATE    = "2026-04-01"
 
 # ── Version history ─────────────────────────────────────────────────────────
+# V0.1.9a-alpha 2026-04-01  FIX-010: graphic_editor _palette AttributeError
+#                           (same family as FIX-009 — toolbar built before
+#                           self._palette assigned → wrap in lambda)
+#                           Full AST audit confirmed no other instances anywhere
 # V0.1.9-alpha  2026-04-01  CloudSyncPanel in Backup/Restore (Tab 3)
 #                           Google Drive + OneDrive auth, upload, download
 #                           Auto-sync trigger + selection bridge
