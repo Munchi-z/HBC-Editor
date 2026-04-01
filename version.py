@@ -3,7 +3,7 @@
 
 VERSION_MAJOR = 0
 VERSION_MINOR = 1
-VERSION_PATCH = 5
+VERSION_PATCH = 7
 VERSION_LABEL = "alpha"
 
 # Label is appended with no separator if it starts with a letter suffix (e.g. "a-alpha")
@@ -16,10 +16,14 @@ APP_NAME      = "HBCE"
 APP_FULL_NAME = "Hybrid Controls Editor"
 APP_AUTHOR    = "HBCE Project"
 APP_URL       = "https://github.com/Munchi-z/HBC-Editor"
-BUILD_DATE    = "2026-03-31"
+BUILD_DATE    = "2026-04-01"
 
 # ── Version history ─────────────────────────────────────────────────────────
-# V0.1.2-alpha  2026-03-31  Backup/Restore — full implementation (1,762 lines)
+# V0.1.7-alpha  2026-04-01  data/models.py (510 ln), data/project.py (441 ln),
+#                           vendors: JCI Metasys, Trane Tracer, Distech ECLYPSE
+#                           FIX: graphic_editor last_insert_rowid → db.insert()
+# V0.1.6-alpha  2026-04-01  Program Editor — full FBD/node canvas (1,403 lines)
+# V0.1.5-alpha  2026-03-31  Report Builder — PDF+Excel, 5 report types
 # V0.1.1-alpha  2026-03-31  Trend Viewer — full implementation
 # V0.1.0-alpha  2026-03-31  Version milestone — alarm viewer fix + security stubs
 # V0.0.9-alpha  2026-03-30  Alarm Viewer visual redesign + crash handler
