@@ -128,8 +128,16 @@ class MainWindow(QMainWindow):
             self.panels[idx] = panel
             self.stack.addWidget(panel)
 
-        self.stack.setCurrentIndex(self.PANEL_DASHBOARD)
+        # ── Inter-panel signal wiring ─────────────────────────────────────
+        # When the Connection Wizard saves a device, propagate to all panels
+        wizard = self.panels.get(self.PANEL_CONNECTION)
+        if wizard and hasattr(wizard, "device_saved"):
+            wizard.device_saved.connect(self._on_device_saved)
 
+        # Seed initial device list into Point Browser and Dashboard from DB
+        self._refresh_device_lists()
+
+        self.stack.setCurrentIndex(self.PANEL_DASHBOARD)
     # ── Menu bar ──────────────────────────────────────────────────────────────
 
     def _build_menu(self):
@@ -289,6 +297,14 @@ class MainWindow(QMainWindow):
             return
         self.stack.setCurrentIndex(index)
         self.sidebar.set_active(index)
+
+        # Refresh device dropdown when navigating to Point Browser
+        # so any devices saved earlier in this session are always visible.
+        if index == self.PANEL_POINT_BROWSER:
+            pb = self.panels.get(self.PANEL_POINT_BROWSER)
+            if pb and hasattr(pb, "load_devices_from_db"):
+                pb.load_devices_from_db()
+
         logger.debug(f"Switched to panel {index}")
 
     def _user_can_access(self, panel_index: int) -> bool:
@@ -348,6 +364,72 @@ class MainWindow(QMainWindow):
         else:
             self.status_conn.setText("  ⚫  Not Connected")
         self.sidebar.set_connection_status(connected, device_name)
+
+    # ── Device saved handler ──────────────────────────────────────────────────
+
+    def _on_device_saved(self, record: dict):
+        """
+        Called when the Connection Wizard saves a new device.
+        Propagates the new device to every panel that cares about it.
+        """
+        name = record.get("name", "")
+        logger.info(f"Device saved: {name} — refreshing all panels")
+
+        # 1. Status bar + sidebar
+        self.set_connection_status(True, name)
+
+        # 2. Dashboard device card
+        dashboard = self.panels.get(self.PANEL_DASHBOARD)
+        if dashboard and hasattr(dashboard, "refresh_devices_from_db"):
+            dashboard.refresh_devices_from_db()
+
+        # 3. Point Browser device dropdown
+        pb = self.panels.get(self.PANEL_POINT_BROWSER)
+        if pb and hasattr(pb, "load_devices_from_db"):
+            pb.load_devices_from_db()
+
+        # 4. Alarm Viewer — reload from DB (new device may have stored alarms)
+        av = self.panels.get(self.PANEL_ALARM_VIEWER)
+        if av and hasattr(av, "refresh_from_db"):
+            av.refresh_from_db()
+
+        # 5. Scheduler device list
+        sched = self.panels.get(self.PANEL_SCHEDULER)
+        if sched and hasattr(sched, "refresh_devices"):
+            sched.refresh_devices()
+
+        # 6. Report Builder device dropdown
+        rb = self.panels.get(self.PANEL_REPORT_BUILDER)
+        if rb and hasattr(rb, "refresh_devices"):
+            rb.refresh_devices()
+
+        # 7. Status bar confirmation
+        self.statusBar().showMessage(
+            f"✅  Device '{name}' saved — all panels updated.", 6000
+        )
+
+    def _refresh_device_lists(self):
+        """
+        Called once at startup to populate device lists in all data panels
+        from whatever devices are already in the database (previous sessions).
+        """
+        dashboard = self.panels.get(self.PANEL_DASHBOARD)
+        if dashboard and hasattr(dashboard, "refresh_devices_from_db"):
+            dashboard.refresh_devices_from_db()
+
+        pb = self.panels.get(self.PANEL_POINT_BROWSER)
+        if pb and hasattr(pb, "load_devices_from_db"):
+            pb.load_devices_from_db()
+
+        av = self.panels.get(self.PANEL_ALARM_VIEWER)
+        if av and hasattr(av, "refresh_from_db"):
+            av.refresh_from_db()
+
+        rb = self.panels.get(self.PANEL_REPORT_BUILDER)
+        if rb and hasattr(rb, "refresh_devices"):
+            rb.refresh_devices()
+
+        logger.debug("Startup device list refresh complete")
 
     # ── Window state ──────────────────────────────────────────────────────────
 

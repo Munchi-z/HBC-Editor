@@ -598,6 +598,34 @@ class DashboardPanel(QWidget):
             self._refresh_alarms(self._cards[W_ALARMS])
         if W_PROJECTS in self._cards:
             self._cards[W_PROJECTS].refresh()
+        # Re-check device list every cycle (devices can be added/removed)
+        self.refresh_devices_from_db()
+
+    def refresh_devices_from_db(self):
+        """
+        Public method — called by MainWindow after a device is saved,
+        and also by the periodic refresh timer.
+        Reads the devices table and updates the Connected Devices card.
+        """
+        if W_DEVICES not in self._cards:
+            return
+        if not self.db:
+            return
+        try:
+            rows = self.db.fetchall(
+                "SELECT id, name, vendor, protocol FROM devices ORDER BY name"
+            )
+            devices = [
+                {
+                    "name":     r["name"],
+                    "vendor":   r.get("vendor", ""),
+                    "protocol": r.get("protocol", ""),
+                }
+                for r in rows
+            ]
+            self._cards[W_DEVICES].refresh(devices)
+        except Exception as e:
+            logger.warning(f"Dashboard device refresh failed: {e}")
 
     def _refresh_alarms(self, card: AlarmsCard):
         if self.db:

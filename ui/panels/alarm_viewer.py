@@ -525,23 +525,83 @@ class AlarmLoadThread(QThread):
     load_error    = pyqtSignal(str)
     progress      = pyqtSignal(int, str)
 
-    def __init__(self, adapter=None, parent=None):
+    def __init__(self, adapter=None, db=None, parent=None):
         super().__init__(parent)
         self._adapter = adapter
+        self._db      = db
 
     def run(self):
         try:
-            self.progress.emit(10, "Connecting to device…")
-            time.sleep(0.3)
-            self.progress.emit(40, "Reading alarm log…")
-            time.sleep(0.3)
-            self.progress.emit(80, "Parsing records…")
+            self.progress.emit(10, "Loading alarms…")
+
+            # ── 1. Try real DB first ──────────────────────────────────────
+            if self._db:
+                try:
+                    rows = self._db.fetchall(
+                        """SELECT a.id, a.timestamp, a.object_ref,
+                                  a.description, a.priority,
+                                  a.ack_state, a.ack_by, a.ack_time,
+                                  COALESCE(d.name, 'Unknown') AS device_name
+                           FROM alarms a
+                           LEFT JOIN devices d ON d.id = a.device_id
+                           ORDER BY a.timestamp DESC
+                           LIMIT 500"""
+                    )
+                    if rows:
+                        self.progress.emit(70, f"Parsing {len(rows)} records…")
+                        alarms = [self._row_to_alarm(r) for r in rows]
+                        self.progress.emit(100, "Done")
+                        self.alarms_loaded.emit(alarms)
+                        return
+                except Exception as e:
+                    # DB read failed — fall through to demo
+                    pass
+
+            # ── 2. Adapter live read ──────────────────────────────────────
+            if self._adapter:
+                self.progress.emit(30, "Reading alarm log from device…")
+                time.sleep(0.4)
+                alarms = _generate_demo_alarms()   # placeholder for real read
+                self.progress.emit(100, "Done")
+                self.alarms_loaded.emit(alarms)
+                return
+
+            # ── 3. No DB data, no adapter → demo data with clear label ────
+            self.progress.emit(50, "No device connected — loading demo data…")
             time.sleep(0.2)
             alarms = _generate_demo_alarms()
-            self.progress.emit(100, "Done")
+            self.progress.emit(100, "Done (demo)")
             self.alarms_loaded.emit(alarms)
+
         except Exception as exc:
             self.load_error.emit(str(exc))
+
+    @staticmethod
+    def _row_to_alarm(row: dict) -> "AlarmRecord":
+        """Convert a DB row → AlarmRecord."""
+        try:
+            ts = datetime.fromisoformat(row["timestamp"])
+        except Exception:
+            ts = datetime.now()
+
+        acked_by = row.get("ack_by") or None
+        state = (AlarmState.CLEARED_ACKED
+                 if row.get("ack_state") == "acknowledged"
+                 else AlarmState.ACTIVE_UNACKED)
+
+        return AlarmRecord(
+            alarm_id    = row["id"],
+            timestamp   = ts,
+            device_name = row.get("device_name", "Unknown"),
+            device_addr = "",
+            object_name = row.get("object_ref", ""),
+            object_type = "",
+            instance    = 0,
+            description = row.get("description", ""),
+            priority    = int(row.get("priority") or 4),
+            state       = state,
+            acked_by    = acked_by,
+        )
 
 
 class AlarmAckThread(QThread):
@@ -1220,13 +1280,23 @@ class AlarmViewerPanel(QWidget):
     # ── Load ───────────────────────────────────────────────────────────────
 
     def _load_alarms(self):
-        self._status_bar.showMessage("Loading alarms…")
-        self._load_thread = AlarmLoadThread(adapter=self._adapter, parent=self)
+        source = "device" if self._adapter else "database"
+        self._status_bar.showMessage(f"Loading alarms from {source}…")
+        self._load_thread = AlarmLoadThread(
+            adapter=self._adapter, db=self.db, parent=self)
         self._load_thread.alarms_loaded.connect(self._on_alarms_loaded)
         self._load_thread.load_error.connect(
             lambda e: self._status_bar.showMessage(f"Error: {e}"))
         self._load_thread.progress.connect(
             lambda pct, msg: self._status_bar.showMessage(f"{msg} ({pct}%)"))
+        self._load_thread.start()
+
+    def refresh_from_db(self):
+        """
+        Public method — called by MainWindow after a device is saved
+        or at startup. Re-loads alarms from the database.
+        """
+        self._load_alarms()
         self._load_thread.start()
 
     def _on_alarms_loaded(self, alarms: List[AlarmRecord]):
@@ -1241,6 +1311,13 @@ class AlarmViewerPanel(QWidget):
         if idx >= 0: self._category_combo.setCurrentIndex(idx)
         self._category_combo.blockSignals(False)
         self._update_status()
+        # Hint when showing demo/no-device data
+        if not self._adapter and not (self.db and alarms and
+                hasattr(alarms[0], 'alarm_id') and alarms[0].alarm_id > 0):
+            self._status_bar.showMessage(
+                "No device connected — showing demo alarms. "
+                "Connect a device via the Connection Wizard to view live data."
+            )
 
     # ── Acknowledge ────────────────────────────────────────────────────────
 

@@ -306,6 +306,27 @@ class ReportGenerateThread(QThread):
 
     def _write_pdf(self, headers: list, rows: list):
         try:
+            from reports.pdf_builder import HBCEPDFBuilder
+            title = REPORT_TYPES[[r[0] for r in REPORT_TYPES].index(
+                self.report_type)][1]
+            clean_title = (title.replace("📋","").replace("🔔","")
+                               .replace("📈","").replace("💾","")
+                               .replace("📅","").strip())
+            builder = HBCEPDFBuilder(
+                self.report_type, headers, rows, self.output_path)
+            builder.build(
+                report_title=clean_title,
+                device_name=self.params.get("device_name", ""),
+                params={k: v for k, v in self.params.items()
+                        if k not in ("device_name",) and v},
+            )
+        except ImportError:
+            # Fallback: inline reportlab (keeps old behaviour if reports/ missing)
+            self._write_pdf_inline(headers, rows)
+
+    def _write_pdf_inline(self, headers: list, rows: list):
+        """Fallback inline PDF writer (no reports/ package needed)."""
+        try:
             from reportlab.lib.pagesizes import A4, landscape
             from reportlab.lib import colors
             from reportlab.lib.styles import getSampleStyleSheet
@@ -324,13 +345,11 @@ class ReportGenerateThread(QThread):
             styles = getSampleStyleSheet()
             story  = []
 
-            # Title
             title = REPORT_TYPES[[r[0] for r in REPORT_TYPES].index(self.report_type)][1]
             story.append(Paragraph(f"HBCE Report — {title.replace('📋','').replace('🔔','').replace('📈','').replace('💾','').replace('📅','').strip()}", styles["Title"]))
             story.append(Paragraph(f"Generated: {_fmt_now()}", styles["Normal"]))
             story.append(Spacer(1, 0.5*cm))
 
-            # Table
             col_count = len(headers)
             page_w = landscape(A4)[0] - 3*cm
             col_w  = page_w / col_count
@@ -364,6 +383,26 @@ class ReportGenerateThread(QThread):
 
     def _write_xlsx(self, headers: list, rows: list):
         try:
+            from reports.excel_builder import HBCEExcelBuilder
+            title = REPORT_TYPES[[r[0] for r in REPORT_TYPES].index(
+                self.report_type)][1]
+            clean_title = (title.replace("📋","").replace("🔔","")
+                               .replace("📈","").replace("💾","")
+                               .replace("📅","").strip())
+            builder = HBCEExcelBuilder(
+                self.report_type, headers, rows, self.output_path)
+            builder.build(
+                report_title=clean_title,
+                device_name=self.params.get("device_name", ""),
+                params={k: v for k, v in self.params.items()
+                        if k not in ("device_name",) and v},
+            )
+        except ImportError:
+            self._write_xlsx_inline(headers, rows)
+
+    def _write_xlsx_inline(self, headers: list, rows: list):
+        """Fallback inline Excel writer (no reports/ package needed)."""
+        try:
             import openpyxl
             from openpyxl.styles import (
                 Font, PatternFill, Alignment, Border, Side,
@@ -375,12 +414,10 @@ class ReportGenerateThread(QThread):
             title = REPORT_TYPES[[r[0] for r in REPORT_TYPES].index(self.report_type)][1]
             ws.title = title.replace("📋","").replace("🔔","").replace("📈","").replace("💾","").replace("📅","").strip()[:31]
 
-            # Report metadata rows
             ws.append([f"HBCE Report — {ws.title}"])
             ws.append([f"Generated: {_fmt_now()}"])
             ws.append([])
 
-            # Header row
             header_row = 4
             ws.append(headers)
             hdr_fill = PatternFill("solid", fgColor="2B6CB0")
@@ -390,13 +427,12 @@ class ReportGenerateThread(QThread):
 
             for col_idx, _ in enumerate(headers, 1):
                 cell = ws.cell(row=header_row, column=col_idx)
-                cell.fill     = hdr_fill
-                cell.font     = hdr_font
+                cell.fill      = hdr_fill
+                cell.font      = hdr_font
                 cell.alignment = Alignment(horizontal="center", vertical="center")
-                cell.border   = border
+                cell.border    = border
 
-            # Data rows
-            alt_fill = PatternFill("solid", fgColor="F2F3F7")
+            alt_fill  = PatternFill("solid", fgColor="F2F3F7")
             norm_font = Font(size=8)
             for r_idx, row in enumerate(rows):
                 ws.append(row)
@@ -404,12 +440,11 @@ class ReportGenerateThread(QThread):
                 fill = alt_fill if r_idx % 2 == 0 else PatternFill()
                 for col_idx in range(1, len(headers)+1):
                     c = ws.cell(row=actual_row, column=col_idx)
-                    c.fill   = fill
-                    c.font   = norm_font
-                    c.border = border
+                    c.fill      = fill
+                    c.font      = norm_font
+                    c.border    = border
                     c.alignment = Alignment(vertical="center")
 
-            # Auto-width
             for col_idx, _ in enumerate(headers, 1):
                 col_letter = get_column_letter(col_idx)
                 max_len = max(
@@ -418,13 +453,9 @@ class ReportGenerateThread(QThread):
                 )
                 ws.column_dimensions[col_letter].width = min(max(max_len + 2, 8), 40)
 
-            # Freeze header
             ws.freeze_panes = ws.cell(row=header_row+1, column=1)
-
-            # Title row styling
             ws["A1"].font = Font(bold=True, size=12)
             ws["A2"].font = Font(size=9, italic=True, color="606070")
-
             wb.save(self.output_path)
 
         except ImportError:
@@ -538,8 +569,13 @@ class ReportConfigWidget(QWidget):
         snap_widget = QWidget()
         snap_lay = QVBoxLayout(snap_widget)
         snap_lay.setContentsMargins(0,0,0,0)
-        snap_lay.addWidget(QLabel("Snapshot captures all live point values."))
-        snap_lay.addWidget(QLabel("No additional parameters needed."))
+        snap_lay.addWidget(QLabel("Device filter:"))
+        self._snap_device_combo = QComboBox()
+        self._snap_device_combo.addItem("All devices", "")
+        snap_lay.addWidget(self._snap_device_combo)
+        snap_lay.addWidget(QLabel(
+            "Captures all point values from the selected device\n"
+            "(or all devices if none selected)."))
         snap_lay.addStretch()
         self._params_stack.addWidget(snap_widget)
 
@@ -669,9 +705,45 @@ class ReportConfigWidget(QWidget):
         _, _, desc = REPORT_TYPES[idx]
         self._desc_lbl.setText(desc)
 
+    def refresh_devices(self, db=None):
+        """
+        Public method — called by MainWindow after a device is saved.
+        Repopulates the device filter dropdown in the Point Snapshot params.
+        Accepts an optional db reference; falls back to parent panel's db.
+        """
+        if db is None:
+            # Try to get db from parent ReportBuilderPanel
+            p = self.parent()
+            while p:
+                if hasattr(p, "db") and p.db:
+                    db = p.db
+                    break
+                p = p.parent() if hasattr(p, "parent") else None
+
+        current = self._snap_device_combo.currentData()
+        self._snap_device_combo.blockSignals(True)
+        self._snap_device_combo.clear()
+        self._snap_device_combo.addItem("All devices", "")
+        if db:
+            try:
+                rows = db.fetchall(
+                    "SELECT id, name FROM devices ORDER BY name")
+                for row in rows:
+                    self._snap_device_combo.addItem(row["name"], row["name"])
+            except Exception:
+                pass
+        # Restore selection if still available
+        idx = self._snap_device_combo.findData(current)
+        if idx >= 0:
+            self._snap_device_combo.setCurrentIndex(idx)
+        self._snap_device_combo.blockSignals(False)
+
     def _get_params(self) -> dict:
         idx = self._type_combo.currentIndex()
         rt  = self._type_combo.currentData()
+        if rt == "point_snapshot":
+            device_name = self._snap_device_combo.currentData() or ""
+            return {"device_name": device_name} if device_name else {}
         if rt == "alarm_history":
             qf = self._alarm_from.date()
             qt = self._alarm_to.date()
@@ -770,6 +842,16 @@ class ReportBuilderPanel(QWidget):
 
         root.addWidget(self._build_progress_area())
         root.addWidget(self._build_status_bar())
+
+        # Seed device dropdown from DB on startup
+        self._config.refresh_devices(self.db)
+
+    def refresh_devices(self):
+        """
+        Public method — called by MainWindow after a device is saved.
+        Delegates to the config widget's device dropdown.
+        """
+        self._config.refresh_devices(self.db)
 
     def _build_toolbar(self) -> QFrame:
         frame = QFrame()

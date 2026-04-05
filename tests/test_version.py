@@ -27,10 +27,13 @@ class TestVersion(unittest.TestCase):
         self.assertRegex(version.BUILD_DATE, r"\d{4}-\d{2}-\d{2}")
 
     def test_version_label_is_alpha(self):
-        self.assertEqual(version.VERSION_LABEL, "alpha")
+        self.assertIn("alpha", version.VERSION_LABEL)
 
-    def test_patch_at_least_8(self):
-        self.assertGreaterEqual(version.VERSION_PATCH, 8)
+    def test_version_is_020(self):
+        self.assertEqual(version.VERSION_MAJOR, 0)
+        self.assertEqual(version.VERSION_MINOR, 2)
+        self.assertEqual(version.VERSION_PATCH, 0)
+        self.assertIn("V0.2.0", version.VERSION)
 
 if __name__ == "__main__":
     unittest.main()

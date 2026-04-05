@@ -1336,15 +1336,82 @@ class SchedulerPanel(QWidget):
             self._schedule.holidays = holidays
         self._dirty = True
 
+    def refresh_devices(self):
+        """
+        Public method — called by MainWindow after a device is saved.
+        The scheduler reads devices on demand via _get_devices(),
+        so we just reload the schedule tree to pick up any new device names.
+        """
+        self._load_local_schedules()
+
     def _new_schedule(self):
-        from PyQt6.QtWidgets import QInputDialog
-        name, ok = QInputDialog.getText(self, "New Schedule", "Schedule name:")
-        if not ok or not name.strip():
+        """Create a new schedule, prompting for name and target device."""
+        from PyQt6.QtWidgets import (
+            QDialog, QDialogButtonBox, QFormLayout,
+            QLineEdit, QComboBox, QLabel,
+        )
+
+        # ── Build a small dialog: name + device picker ────────────────────
+        dlg = QDialog(self)
+        dlg.setWindowTitle("New Schedule")
+        dlg.setMinimumWidth(340)
+        dlg.setStyleSheet(
+            "QDialog { background: #1a1a2e; }"
+            "QLabel  { color: #C0C0D0; }"
+            "QLineEdit, QComboBox { background: #252540; color: #E0E0F0; "
+            "  border: 1px solid #3a3a5c; border-radius: 4px; padding: 4px 8px; }"
+        )
+
+        form = QFormLayout(dlg)
+        form.setSpacing(10)
+        form.setContentsMargins(16, 16, 16, 16)
+
+        name_edit = QLineEdit()
+        name_edit.setPlaceholderText("e.g. HVAC Occupied Hours")
+        form.addRow("Schedule name:", name_edit)
+
+        device_combo = QComboBox()
+        device_combo.addItem("Local (no device)", "Local")
+        devices = self._get_devices()
+        for dev in devices:
+            label = f"{dev['name']}"
+            device_combo.addItem(label, dev["name"])
+        form.addRow("Target device:", device_combo)
+
+        if not devices:
+            hint = QLabel("No devices saved yet — connect one via the Connection Wizard.")
+            hint.setStyleSheet("color: #606070; font-size: 8pt;")
+            form.addRow("", hint)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok |
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setStyleSheet(
+            "background: #5C8AFF; color: white; border: none; "
+            "border-radius: 4px; padding: 5px 18px; font-weight: bold;"
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setStyleSheet(
+            "background: #252540; color: #A0A0C0; border: 1px solid #3a3a5c; "
+            "border-radius: 4px; padding: 5px 18px;"
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        s = Schedule(name=name.strip(), device_name="Local")
+
+        name = name_edit.text().strip()
+        if not name:
+            return
+
+        device_name = device_combo.currentData() or "Local"
+        s = Schedule(name=name, device_name=device_name)
         s.default_weekly()
         self._load_schedule_into_ui(s)
         self._dirty = True
+        logger.info(f"New schedule '{name}' for device '{device_name}'")
 
     def _clear_week(self):
         ans = QMessageBox.question(
