@@ -73,6 +73,14 @@ from PyQt6.QtWidgets import (
 
 from core.logger import get_logger
 
+# Comms-layer AlarmRecord — aliased to avoid collision with the UI AlarmRecord
+# defined below.  Import is guarded so unit tests (which have no comms layer
+# on the path) continue to run without modification.
+try:
+    from comms.base_adapter import AlarmRecord as _CommAlarmRecord
+except ImportError:  # pragma: no cover
+    _CommAlarmRecord = None   # type: ignore
+
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -560,8 +568,17 @@ class AlarmLoadThread(QThread):
             # ── 2. Adapter live read ──────────────────────────────────────
             if self._adapter:
                 self.progress.emit(30, "Reading alarm log from device…")
-                time.sleep(0.4)
-                alarms = _generate_demo_alarms()   # placeholder for real read
+                raw = self._adapter.read_alarm_summary(0)   # 0 = network-wide
+                if raw:
+                    self.progress.emit(80, f"Converting {len(raw)} alarm(s)…")
+                    alarms = [
+                        self._comms_to_ui(ca, idx)
+                        for idx, ca in enumerate(raw, start=1)
+                    ]
+                else:
+                    # Adapter connected but returned nothing — show empty list,
+                    # not fake demo data.  An empty alarm log is a valid state.
+                    alarms = []
                 self.progress.emit(100, "Done")
                 self.alarms_loaded.emit(alarms)
                 return
@@ -603,21 +620,92 @@ class AlarmLoadThread(QThread):
             acked_by    = acked_by,
         )
 
+    @staticmethod
+    def _comms_to_ui(ca: "_CommAlarmRecord", alarm_id: int = 0) -> "AlarmRecord":
+        """
+        Convert a comms-layer AlarmRecord (base_adapter.AlarmRecord) to the
+        UI-layer AlarmRecord used by AlarmTableModel.
+
+        ca.object_ref for BACnet is a repr of the objectIdentifier tuple,
+        e.g. "('analogValue', 5)".  We parse that into object_type + instance.
+        """
+        # Timestamp
+        try:
+            ts = datetime.fromisoformat(ca.timestamp)
+        except Exception:
+            ts = datetime.now()
+
+        # Ack state
+        state = (AlarmState.ACKNOWLEDGED
+                 if ca.ack_state == "acknowledged"
+                 else AlarmState.ACTIVE)
+
+        # Parse BACnet objectIdentifier string → object_type, instance
+        obj_type = ""
+        instance = 0
+        try:
+            import ast
+            parsed = ast.literal_eval(ca.object_ref)
+            if isinstance(parsed, (tuple, list)) and len(parsed) >= 2:
+                obj_type = str(parsed[0])
+                instance = int(parsed[1])
+            else:
+                obj_type = str(ca.object_ref)
+        except Exception:
+            obj_type = str(ca.object_ref)
+
+        return AlarmRecord(
+            alarm_id    = alarm_id,
+            timestamp   = ts,
+            device_name = f"Device {ca.device_id}" if ca.device_id else "Network",
+            device_addr = "",
+            object_name = ca.object_ref,
+            object_type = obj_type,
+            instance    = instance,
+            description = ca.description,
+            priority    = max(1, min(8, ca.priority)),
+            state       = state,
+        )
+
 
 class AlarmAckThread(QThread):
-    ack_complete = pyqtSignal(list, str)
+    ack_complete = pyqtSignal(list, str)   # alarm_ids, username
     ack_error    = pyqtSignal(str)
 
-    def __init__(self, alarm_ids: List[int], username: str, adapter=None, parent=None):
+    def __init__(self, alarm_records: List["AlarmRecord"], username: str,
+                 adapter=None, parent=None):
         super().__init__(parent)
-        self._ids      = alarm_ids
+        self._records  = alarm_records
         self._username = username
         self._adapter  = adapter
 
     def run(self):
         try:
-            time.sleep(0.4)
-            self.ack_complete.emit(self._ids, self._username)
+            ids = [r.alarm_id for r in self._records]
+            if self._adapter:
+                for rec in self._records:
+                    try:
+                        # adapter.acknowledge_alarm needs BACnet addressing.
+                        # device_id is stored as int inside the UI AlarmRecord
+                        # (populated by _comms_to_ui from the comms device_id).
+                        # object_type and instance come from the parsed fields.
+                        device_id   = getattr(rec, "_device_id_raw", 0)
+                        object_type = rec.object_type or "device"
+                        instance    = rec.instance    or 0
+                        ts_str      = rec.timestamp.isoformat(
+                            timespec="seconds"
+                        ) if rec.timestamp else ""
+                        self._adapter.acknowledge_alarm(
+                            device_id   = device_id,
+                            object_type = object_type,
+                            instance    = instance,
+                            timestamp   = ts_str,
+                            ack_text    = f"Acknowledged by {self._username} via HBCE",
+                        )
+                    except Exception:
+                        # Per-record failure is non-fatal — local ack proceeds
+                        pass
+            self.ack_complete.emit(ids, self._username)
         except Exception as exc:
             self.ack_error.emit(str(exc))
 
@@ -641,9 +729,15 @@ class AlarmPollThread(QThread):
                 time.sleep(self._interval)
                 if not self._running:
                     break
-                import random
-                if random.random() < 0.3:
-                    self.new_alarms.emit(_generate_demo_alarms(count=1))
+                if self._adapter:
+                    raw = self._adapter.read_alarm_summary(0)
+                    if raw:
+                        alarms = [
+                            AlarmLoadThread._comms_to_ui(ca, idx)
+                            for idx, ca in enumerate(raw, start=1)
+                        ]
+                        self.new_alarms.emit(alarms)
+                    # If raw is empty, emit nothing — don't thrash the model
             except Exception as exc:
                 self.poll_error.emit(str(exc))
 
@@ -1349,7 +1443,14 @@ class AlarmViewerPanel(QWidget):
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         self._status_bar.showMessage(f"Acknowledging {len(ids)} alarm(s)…")
-        self._ack_thread = AlarmAckThread(ids, dlg.username, self._adapter, self)
+        # Fetch full AlarmRecord objects — AlarmAckThread needs them to call
+        # adapter.acknowledge_alarm() with BACnet addressing.
+        records = [r for aid in ids
+                   for r in [self._model.get_alarm(aid)]
+                   if r is not None]
+        self._ack_thread = AlarmAckThread(
+            records, dlg.username, self._adapter, self
+        )
         self._ack_thread.ack_complete.connect(self._on_ack_complete)
         self._ack_thread.ack_error.connect(
             lambda e: self._status_bar.showMessage(f"Ack error: {e}"))

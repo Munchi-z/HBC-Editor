@@ -7,7 +7,7 @@ Connects to Modbus TCP devices over Ethernet.
 """
 
 import threading
-from typing import Any
+from typing import Any, Dict
 
 from comms.base_adapter import (
     BaseCommAdapter, DeviceInfo, PointValue, AlarmRecord, TrendRecord
@@ -25,6 +25,10 @@ class ModbusTCPAdapter(BaseCommAdapter):
         self._client = None
         self._lock = threading.Lock()
         self._params = {}
+        # Per-device register maps: {device_id: {"coil": (start, count), ...}}
+        # Populated by set_register_map() — called from Point Browser when
+        # loading a device whose map has been saved to the DB.
+        self._register_maps: Dict[int, Dict[str, tuple]] = {}
 
     @property
     def protocol_name(self) -> str:
@@ -132,17 +136,72 @@ class ModbusTCPAdapter(BaseCommAdapter):
             protocol="Modbus TCP",
         )]
 
+    def set_register_map(self, device_id: int, config: Dict[str, tuple]) -> None:
+        """
+        Store a per-device register map for use by get_object_list().
+
+        Called from Point Browser when loading a device that has a saved
+        register map in the DB (stored as JSON in the device's config column).
+
+        config format:
+            {
+                "coil":             (start_address, count),   # e.g. (0, 256)
+                "discrete_input":   (start_address, count),
+                "holding_register": (start_address, count),
+                "input_register":   (start_address, count),
+            }
+        Any key can be omitted to suppress that register type entirely.
+
+        Example — 64-coil relay board:
+            adapter.set_register_map(1, {"coil": (0, 64)})
+        """
+        self._register_maps[device_id] = config
+        logger.info(
+            f"Modbus TCP: register map set for device {device_id}: {config}"
+        )
+
+    def get_register_map(self, device_id: int) -> Dict[str, tuple]:
+        """Return the stored register map for device_id, or the default."""
+        return self._register_maps.get(device_id, self._default_register_map())
+
+    @staticmethod
+    def _default_register_map() -> Dict[str, tuple]:
+        """
+        Default register map when no device-specific map has been configured.
+        Covers the practical range of most Modbus field devices:
+          coils / discrete inputs : 0 – 9999  (10,000 points)
+          holding / input registers: 0 – 9999  (10,000 registers)
+        The Point Browser will only display points that respond without error,
+        so padding doesn't cause false positives — it just determines how far
+        the scan goes.
+        """
+        return {
+            "coil":             (0, 10_000),
+            "discrete_input":   (0, 10_000),
+            "holding_register": (0, 10_000),
+            "input_register":   (0, 10_000),
+        }
+
     def get_object_list(self, device_id: int) -> list[tuple[str, int]]:
         """
-        Modbus has no object discovery — returns a standard register range.
-        User should configure the register map via the Point Browser.
+        Return the list of (register_type, address) pairs for this device.
+
+        Priority order:
+          1. Device-specific map set via set_register_map()  ← DB-stored config
+          2. Default map (0–9999 for all four register types)
+
+        Modbus has no protocol-level discovery — this is always a configured
+        or assumed range.  The Point Browser filters the list by actually
+        attempting reads and discarding addresses that return errors.
         """
-        # Return placeholder coil and register ranges
+        reg_map = self.get_register_map(device_id)
         result = []
-        result += [("coil", i) for i in range(0, 64)]
-        result += [("discrete_input", i) for i in range(0, 64)]
-        result += [("holding_register", i) for i in range(0, 128)]
-        result += [("input_register", i) for i in range(0, 128)]
+        for reg_type, (start, count) in reg_map.items():
+            result.extend((reg_type, addr) for addr in range(start, start + count))
+        logger.debug(
+            f"Modbus TCP get_object_list device={device_id}: "
+            f"{len(result)} addresses across {len(reg_map)} register type(s)"
+        )
         return result
 
     def read_property(
@@ -197,7 +256,31 @@ class ModbusTCPAdapter(BaseCommAdapter):
             return False
 
     def read_alarm_summary(self, device_id: int) -> list[AlarmRecord]:
+        """
+        Modbus TCP has no native alarm or event service.
+
+        Alarm detection for Modbus devices must be done at the application
+        layer by comparing register/coil values against configured thresholds.
+        That is the responsibility of the Alarm Viewer's threshold-check logic
+        (future ITEM-ALARM-001), not the adapter.
+
+        Returns [] intentionally — this is not a stub.
+        """
         return []
 
-    def get_trend_log(self, device_id, object_instance, count=100) -> list[TrendRecord]:
+    def get_trend_log(
+        self,
+        device_id:       int,
+        object_instance: int,
+        count:           int = 100,
+    ) -> list[TrendRecord]:
+        """
+        Modbus TCP has no native trend-log or data-log service.
+
+        Historical data for Modbus devices is collected exclusively by
+        HBCE's live polling (TrendPollThread) and stored in the local DB.
+        ReadRange-style log retrieval is not available from the device.
+
+        Returns [] intentionally — this is not a stub.
+        """
         return []

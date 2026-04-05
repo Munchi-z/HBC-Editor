@@ -12,14 +12,21 @@ Always validate port + baud before attempting connection.
 GOTCHA (GOTCHA-004): RS-485 USB adapters need a driver.
 Silently fails on Windows if driver not installed.
 HBCE detects adapter presence and prompts for driver install.
+
+GOTCHA (GOTCHA-019): Do NOT pass ip= to BAC0.lite() for MS/TP connections.
+ip= is BACnet/IP only. On a serial port BAC0 will attempt a network bind
+instead of opening the COM port, producing a confusing socket error.
+Correct signature: BAC0.lite(port=, baudrate=, mstp_mac=, max_masters=)
 """
 
 import threading
-from typing import Any
+from datetime import datetime
+from typing import Any, Optional
 
 from comms.base_adapter import (
     BaseCommAdapter, DeviceInfo, PointValue, AlarmRecord, TrendRecord
 )
+from comms.bacnet_helpers import _bacnet_ts_to_str, _logdatum_to_float
 from core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -110,10 +117,17 @@ class BACnetMSTPAdapter(BaseCommAdapter):
                 f"BACnet MS/TP: connecting port={port} baud={baud} "
                 f"mac={mac} max_masters={max_mstr}"
             )
+            # BAC0≥22.9 MS/TP (serial) syntax — no ip= kwarg.
+            # ip= is BACnet/IP only; passing it on a serial port causes
+            # BAC0 to attempt network binding instead of opening the COM port.
+            # mstp_mac  — HBCE's own MAC address on the token-passing ring.
+            # max_masters — highest MAC polled during token passing;
+            #               reducing it speeds up discovery on small networks.
             self._bacnet = BAC0.lite(
                 port=port,
                 baudrate=baud,
-                ip=f"127.0.0.1",    # local loopback — BAC0 MS/TP mode
+                mstp_mac=mac,
+                max_masters=max_mstr,
             )
             self._params = params
             self._connected = True
@@ -230,10 +244,121 @@ class BACnetMSTPAdapter(BaseCommAdapter):
             return False
 
     def read_alarm_summary(self, device_id: int) -> list[AlarmRecord]:
-        return []  # Stub — V0.0.4-alpha
+        """
+        Read active alarms via BACnet GetAlarmSummary (network-wide).
 
-    def get_trend_log(self, device_id, object_instance, count=100) -> list[TrendRecord]:
-        return []  # Stub — V0.0.4-alpha
+        Uses the same BAC0.get_alarm_summary() call as BACnet/IP —
+        MS/TP and IP share the same BAC0 network object internals.
+        See bacnet_ip.py for full implementation notes.
+
+        device_id == 0  →  all devices on the MS/TP bus
+        device_id > 0   →  best-effort (BAC0 summary is network-wide)
+        """
+        if not self._bacnet:
+            return []
+        now_str = datetime.now().isoformat(timespec="seconds")
+        try:
+            with self._lock:
+                raw = self._bacnet.get_alarm_summary()
+            if not raw:
+                return []
+            records: list[AlarmRecord] = []
+            for item in raw:
+                try:
+                    if hasattr(item, "objectIdentifier"):
+                        obj_id    = str(item.objectIdentifier)
+                        evt_state = str(item.eventState)
+                        ack_bits  = getattr(item, "acknowledgedTransitions", None)
+                    else:
+                        obj_id    = str(item[0])
+                        evt_state = str(item[1])
+                        ack_bits  = item[2] if len(item) > 2 else None
+                    try:
+                        acked = bool(ack_bits[0]) if ack_bits is not None else False
+                    except (TypeError, IndexError):
+                        acked = False
+                    evt_lower = evt_state.lower()
+                    priority  = 2 if "fault" in evt_lower else (
+                                3 if "offnormal" in evt_lower else 5)
+                    records.append(AlarmRecord(
+                        timestamp   = now_str,
+                        device_id   = device_id,
+                        object_ref  = obj_id,
+                        description = f"{obj_id}  —  eventState: {evt_state}",
+                        priority    = priority,
+                        ack_state   = "acknowledged" if acked else "unacknowledged",
+                    ))
+                except (AttributeError, TypeError, IndexError, KeyError):
+                    continue
+            logger.info(
+                f"BACnet MS/TP read_alarm_summary: {len(records)} active alarm(s)"
+            )
+            return records
+        except NotImplementedError:
+            logger.debug("BACnet MS/TP: GetAlarmSummary not supported by device")
+            return []
+        except AttributeError:
+            logger.warning(
+                "BACnet MS/TP: bacnet.get_alarm_summary() not available — "
+                "ensure BAC0>=22.9 is installed"
+            )
+            return []
+        except Exception as e:
+            logger.warning(f"BACnet MS/TP read_alarm_summary failed: {e}")
+            return []
+
+    def get_trend_log(
+        self,
+        device_id:       int,
+        object_instance: int,
+        count:           int = 100,
+    ) -> list[TrendRecord]:
+        """
+        Read the most recent `count` entries from a BACnet TrendLog object.
+
+        Identical logic to BACnet/IP — both use BAC0's read() method.
+        MS/TP is slower than IP; BAC0 handles retries internally.
+        See bacnet_ip.py for full implementation notes.
+        """
+        if not self._bacnet:
+            return []
+        try:
+            addr = self._get_address(device_id)
+            with self._lock:
+                raw = self._bacnet.read(
+                    f"{addr} trendLog {object_instance} logBuffer"
+                )
+            if not raw:
+                return []
+            records: list[TrendRecord] = []
+            for entry in list(raw)[-count:]:
+                try:
+                    ts_str = _bacnet_ts_to_str(
+                        getattr(entry, "timestamp", None)
+                    )
+                    value  = _logdatum_to_float(
+                        getattr(entry, "logDatum", None)
+                    )
+                    if value is None:
+                        continue
+                    records.append(TrendRecord(
+                        timestamp = ts_str,
+                        value     = value,
+                        status    = "good",
+                    ))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            logger.info(
+                f"BACnet MS/TP get_trend_log: {len(records)} records "
+                f"from trendLog:{object_instance}"
+            )
+            return records
+        except Exception as e:
+            logger.warning(
+                f"BACnet MS/TP get_trend_log failed "
+                f"trendLog:{object_instance}: {e}"
+            )
+            return []
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

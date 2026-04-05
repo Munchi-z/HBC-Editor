@@ -12,11 +12,13 @@ Always use Qt signals to push data back to the UI thread.
 """
 
 import threading
-from typing import Any
+from datetime import datetime
+from typing import Any, Optional
 
 from comms.base_adapter import (
     BaseCommAdapter, DeviceInfo, PointValue, AlarmRecord, TrendRecord
 )
+from comms.bacnet_helpers import _bacnet_ts_to_str, _logdatum_to_float
 from core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -238,10 +240,94 @@ class BACnetIPAdapter(BaseCommAdapter):
     # ── Alarms ────────────────────────────────────────────────────────────────
 
     def read_alarm_summary(self, device_id: int) -> list[AlarmRecord]:
-        # BAC0 alarm summary requires specific service calls
-        # Stubbed — full impl coming V0.0.4-alpha — full implementation in next build step
-        logger.debug(f"BACnet/IP read_alarm_summary: device {device_id} (stub)")
-        return []
+        """
+        Read active alarms via BACnet GetAlarmSummary confirmed service.
+
+        device_id == 0  →  network-wide: returns alarms from all discovered
+                           devices (BAC0.get_alarm_summary() is inherently
+                           network-wide; filtering to a single device is
+                           best-effort via the objectIdentifier).
+        device_id > 0   →  same network-wide fetch, result is unfiltered
+                           (BACnet does not support per-device GetAlarmSummary
+                           from a single confirmed request in standard BAC0).
+
+        BAC0≥22.9 returns a list of AlarmSummary namedtuples:
+            objectIdentifier        — e.g. ('analogValue', 5)
+            eventState              — 'offnormal' | 'fault' | 'normal'
+            acknowledgedTransitions — EventTransitionBits (index 0 = toOffNormal)
+
+        Returns [] on any failure so callers always get a clean list.
+        """
+        if not self._bacnet:
+            return []
+        now_str = datetime.now().isoformat(timespec="seconds")
+        try:
+            with self._lock:
+                raw = self._bacnet.get_alarm_summary()
+            if not raw:
+                logger.debug("BACnet/IP read_alarm_summary: no active alarms")
+                return []
+
+            records: list[AlarmRecord] = []
+            for item in raw:
+                try:
+                    # Support both namedtuple and positional-tuple forms
+                    if hasattr(item, "objectIdentifier"):
+                        obj_id    = str(item.objectIdentifier)
+                        evt_state = str(item.eventState)
+                        ack_bits  = getattr(item, "acknowledgedTransitions", None)
+                    else:
+                        obj_id    = str(item[0])
+                        evt_state = str(item[1])
+                        ack_bits  = item[2] if len(item) > 2 else None
+
+                    # EventTransitionBits[0] = toOffNormal acknowledged flag
+                    try:
+                        acked = bool(ack_bits[0]) if ack_bits is not None else False
+                    except (TypeError, IndexError):
+                        acked = False
+
+                    # Map BACnet event state to HBCE priority (1–8 scale)
+                    evt_lower = evt_state.lower()
+                    if "fault" in evt_lower:
+                        priority = 2   # Critical
+                    elif "offnormal" in evt_lower:
+                        priority = 3   # High
+                    else:
+                        priority = 5   # Medium (shouldn't appear; normal = no alarm)
+
+                    records.append(AlarmRecord(
+                        timestamp   = now_str,
+                        device_id   = device_id,
+                        object_ref  = obj_id,
+                        description = f"{obj_id}  —  eventState: {evt_state}",
+                        priority    = priority,
+                        ack_state   = "acknowledged" if acked else "unacknowledged",
+                    ))
+                except (AttributeError, TypeError, IndexError, KeyError):
+                    continue   # skip malformed entries
+
+            logger.info(
+                f"BACnet/IP read_alarm_summary: {len(records)} active alarm(s)"
+            )
+            return records
+
+        except NotImplementedError:
+            # Some BACnet devices/stacks explicitly reject GetAlarmSummary
+            logger.debug(
+                "BACnet/IP: GetAlarmSummary rejected by device (not supported)"
+            )
+            return []
+        except AttributeError:
+            # get_alarm_summary() missing — BAC0 build too old or wrong variant
+            logger.warning(
+                "BACnet/IP: bacnet.get_alarm_summary() not available. "
+                "Ensure BAC0>=22.9 is installed."
+            )
+            return []
+        except Exception as e:
+            logger.warning(f"BACnet/IP read_alarm_summary failed: {e}")
+            return []
 
     def acknowledge_alarm(
         self,
@@ -251,9 +337,43 @@ class BACnetIPAdapter(BaseCommAdapter):
         timestamp:   str,
         ack_text:    str = "Acknowledged via HBCE",
     ) -> bool:
-        # AcknowledgeAlarm — stubbed V0.0.4-alpha
-        logger.debug(f"BACnet/IP ack alarm: {object_type}:{instance}")
-        return False
+        """
+        Send an AcknowledgeAlarm confirmed service request via BAC0.
+
+        BAC0≥22.9 does not expose a clean high-level wrapper for
+        AcknowledgeAlarm, so we use WriteProperty to set the
+        acknowledgedTransitions property, which most controllers accept
+        as an equivalent when the Acknowledge Service is not available.
+
+        Falls back gracefully if the controller rejects the write —
+        the UI still marks the alarm acknowledged locally in the DB.
+        """
+        if not self._bacnet:
+            return False
+        try:
+            addr = self._get_address(device_id)
+            # Attempt via BAC0 write — sets acknowledgedTransitions
+            # to all-True (toOffNormal, toFault, toNormal all acked).
+            # Priority 8 = manual operator.
+            with self._lock:
+                self._bacnet.write(
+                    f"{addr} {object_type} {instance} "
+                    f"acknowledgedTransitions [True,True,True] - 8"
+                )
+            logger.info(
+                f"BACnet/IP ack alarm: {object_type}:{instance} "
+                f"@ {addr}  text='{ack_text}'"
+            )
+            return True
+        except Exception as e:
+            # WriteProperty rejection is common — the controller may require
+            # the true AcknowledgeAlarm confirmed service.  Log as debug
+            # (not warning) since local DB ack still proceeds on the UI side.
+            logger.debug(
+                f"BACnet/IP acknowledge_alarm write failed "
+                f"({object_type}:{instance}): {e} — local ack only"
+            )
+            return False
 
     # ── Trends ────────────────────────────────────────────────────────────────
 
@@ -263,9 +383,65 @@ class BACnetIPAdapter(BaseCommAdapter):
         object_instance: int,
         count:           int = 100,
     ) -> list[TrendRecord]:
-        # TrendLog ReadRange — stubbed V0.0.4-alpha
-        logger.debug(f"BACnet/IP get_trend_log: instance {object_instance} (stub)")
-        return []
+        """
+        Read the most recent `count` entries from a BACnet TrendLog object
+        using the logBuffer property.
+
+        BAC0≥22.9 approach: read logBuffer as a plain ReadProperty.
+        Each LogRecord entry contains:
+          timestamp  — BACnet DateTime
+          logDatum   — CHOICE (realValue, booleanValue, integerValue, …)
+
+        Returns empty list on any failure — callers should treat this as
+        "no history available" and fall back to live polling if needed.
+        """
+        if not self._bacnet:
+            return []
+        try:
+            addr = self._get_address(device_id)
+            with self._lock:
+                raw = self._bacnet.read(
+                    f"{addr} trendLog {object_instance} logBuffer"
+                )
+            if not raw:
+                logger.debug(
+                    f"BACnet/IP get_trend_log: empty logBuffer "
+                    f"trendLog:{object_instance}"
+                )
+                return []
+
+            records: list[TrendRecord] = []
+            entries = list(raw)[-count:]   # newest `count` entries
+            for entry in entries:
+                try:
+                    ts_str = _bacnet_ts_to_str(
+                        getattr(entry, "timestamp", None)
+                    )
+                    value = _logdatum_to_float(
+                        getattr(entry, "logDatum", None)
+                    )
+                    if value is None:
+                        continue   # null / failure / timeChange — skip
+                    records.append(TrendRecord(
+                        timestamp = ts_str,
+                        value     = value,
+                        status    = "good",
+                    ))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+
+            logger.info(
+                f"BACnet/IP get_trend_log: {len(records)} records "
+                f"from trendLog:{object_instance}"
+            )
+            return records
+
+        except Exception as e:
+            logger.warning(
+                f"BACnet/IP get_trend_log failed "
+                f"trendLog:{object_instance}: {e}"
+            )
+            return []
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
